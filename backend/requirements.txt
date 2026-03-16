@@ -1,0 +1,13 @@
+fastapi
+uvicorn
+langchain-nvidia-ai-endpoints
+langchain
+langchain-community
+langchain-core
+langchain-text-splitters
+faiss-cpu
+python-dotenv
+numpy
+tavily-python
+pypdf
+python-multipart

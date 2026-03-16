@@ -1,0 +1,178 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ═══════════════════════════════════════════════════════════════════
+   LAYOUT LOCK
+   The entire app is a fixed-position native-like shell.
+   Nothing scrolls at the page level — only designated scroll zones.
+   ═══════════════════════════════════════════════════════════════════ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html {
+  position: fixed; inset: 0; width: 100%; height: 100%; overflow: hidden;
+}
+body {
+  position: fixed; inset: 0; width: 100%; height: 100%; overflow: hidden;
+  font-family: 'JetBrains Mono', 'Inter', monospace;
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  user-select: none;
+  touch-action: none;
+  overscroll-behavior: none;
+}
+#root {
+  position: fixed; inset: 0; width: 100%; height: 100%; overflow: hidden;
+  display: flex; flex-direction: column;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   CSS CUSTOM PROPERTIES  (the single source of truth for theming)
+   All colours — including Tailwind override classes below — derive
+   from these vars.  Appearance settings mutate only these vars.
+   ═══════════════════════════════════════════════════════════════════ */
+:root {
+  /* Backgrounds */
+  --bg:           #0D0D0D;
+  --bg2:          #141414;
+  --bg3:          #1A1A1A;
+  --border:       #2A2A2A;
+
+  /* Accent (default: EliteMode green) */
+  --green:        #0BDA76;
+  --green-rgb:    11, 218, 118;      /* RGB triplet — used for rgba() opacity variants */
+  --green-dim:    rgba(11,218,118,0.08);
+  --green-border: rgba(11,218,118,0.25);
+
+  /* Text scale */
+  --text:         #F0F0F0;
+  --text2:        #888;
+  --text3:        #555;
+
+  /* Status */
+  --red:          #FF4D4D;
+  --amber:        #F5A623;
+
+  /* Fonts */
+  --font-mono:    'JetBrains Mono', monospace;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   SCROLLBAR  (thin, theme-aware)
+   ═══════════════════════════════════════════════════════════════════ */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: #444; }
+
+/* ═══════════════════════════════════════════════════════════════════
+   BASE ELEMENT RESETS
+   ═══════════════════════════════════════════════════════════════════ */
+button { cursor: pointer; font-family: inherit; }
+input, textarea, select { font-family: inherit; }
+a { color: var(--green); text-decoration: none; }
+a:hover { text-decoration: underline; }
+input, textarea { user-select: text !important; }
+
+/* ═══════════════════════════════════════════════════════════════════
+   FABRIC.JS TEXTAREA  —  prevent its injection from causing reflow
+   ═══════════════════════════════════════════════════════════════════ */
+canvas + textarea,
+.canvas-container textarea,
+.upper-canvas + textarea {
+  position: fixed !important;
+  overflow: hidden !important;
+  resize: none !important;
+  max-width: none !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   ELECTRON TITLEBAR  —  drag region
+   ═══════════════════════════════════════════════════════════════════ */
+.titlebar-drag-region { -webkit-app-region: drag; }
+.titlebar-drag-region button,
+.titlebar-drag-region a,
+.titlebar-drag-region input { -webkit-app-region: no-drag; }
+
+/* ═══════════════════════════════════════════════════════════════════
+   TAILWIND ↔ CSS-VAR BRIDGE
+   ─────────────────────────────────────────────────────────────────
+   Tailwind generates static classes from tailwind.config.js.
+   These overrides replace those static values with live CSS vars,
+   so Appearance settings (which mutate the vars) propagate into
+   every Design Studio component that uses Tailwind utility classes.
+
+   ACCENT  ─ uses --green and --green-rgb
+   ELITE   ─ uses --bg, --bg2, --bg3, --border (background scale)
+   WARM    ─ uses --text, --text2, --text3 (text scale)
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── Accent: solid ───────────────────────────────────────────────── */
+.text-accent    { color:         var(--green) !important; }
+.border-accent  { border-color:  var(--green) !important; }
+.accent-accent  { accent-color:  var(--green); }
+.bg-accent      { background-color: var(--green) !important; }
+
+/* ── Accent: opacity variants (need --green-rgb for rgba()) ─────── */
+.bg-accent\/8  { background-color: rgba(var(--green-rgb), 0.08) !important; }
+.bg-accent\/10 { background-color: rgba(var(--green-rgb), 0.10) !important; }
+.bg-accent\/12 { background-color: rgba(var(--green-rgb), 0.12) !important; }
+.bg-accent\/15 { background-color: rgba(var(--green-rgb), 0.15) !important; }
+.bg-accent\/20 { background-color: rgba(var(--green-rgb), 0.20) !important; }
+.border-accent\/30 { border-color: rgba(var(--green-rgb), 0.30) !important; }
+.border-accent\/40 { border-color: rgba(var(--green-rgb), 0.40) !important; }
+.border-accent\/60 { border-color: rgba(var(--green-rgb), 0.60) !important; }
+.ring-accent\/50   { --tw-ring-color: rgba(var(--green-rgb), 0.50) !important; }
+
+/* ── Elite background scale ─────────────────────────────────────── */
+.bg-elite-900  { background-color: var(--bg)  !important; }
+.bg-elite-850  { background-color: var(--bg)  !important; }
+.bg-elite-800  { background-color: var(--bg2) !important; }
+.bg-elite-700  { background-color: var(--bg3) !important; }
+
+/* Opacity variants — approximate with static transparency.
+   These use the default dark values since CSS var() + opacity
+   shorthand requires color-mix() which isn't in older Electron. */
+.bg-elite-900\/90 { background-color: rgba(13,13,13,0.90) !important; }
+.bg-elite-900\/50 { background-color: rgba(13,13,13,0.50) !important; }
+.bg-elite-800\/60 { background-color: rgba(20,20,20,0.60) !important; }
+.bg-elite-800\/95 { background-color: rgba(20,20,20,0.95) !important; }
+.bg-elite-700\/60 { background-color: rgba(26,26,26,0.60) !important; }
+.bg-elite-700\/80 { background-color: rgba(26,26,26,0.80) !important; }
+
+/* ── Elite border scale ─────────────────────────────────────────── */
+.border-elite-600\/25 { border-color: rgba(42,42,42,0.25) !important; }
+.border-elite-600\/30 { border-color: rgba(42,42,42,0.30) !important; }
+.border-elite-600\/40 { border-color: rgba(42,42,42,0.40) !important; }
+.border-elite-600\/50 { border-color: rgba(42,42,42,0.50) !important; }
+
+/* ── Text scale ─────────────────────────────────────────────────── */
+.text-warm       { color: var(--text)  !important; }
+.text-warm-muted { color: var(--text2) !important; }
+.text-warm-faint { color: var(--text3) !important; }
+
+/* ── Shadow (accent-aware) ──────────────────────────────────────── */
+.shadow-accent\/5 {
+  --tw-shadow-color: rgba(var(--green-rgb), 0.05);
+  --tw-shadow: var(--tw-shadow-colored);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   KEYFRAME ANIMATIONS
+   ═══════════════════════════════════════════════════════════════════ */
+@keyframes spin   { from { transform: rotate(0deg) }   to { transform: rotate(360deg) } }
+@keyframes pulse          { 0%,100%{ opacity:1 }               50%{ opacity:.2 } }
+@keyframes cursor-blink   { 0%,100%{ opacity:1 }               50%{ opacity:0  } }
+@keyframes skeleton-shimmer {
+  0%   { background: var(--bg3); }
+  50%  { background: color-mix(in srgb, var(--bg3) 60%, var(--border) 40%); }
+  100% { background: var(--bg3); }
+}
+@keyframes slideUp {
+  from { transform: translateX(-50%) translateY(10px); opacity: 0 }
+  to   { transform: translateX(-50%) translateY(0);    opacity: 1 }
+}

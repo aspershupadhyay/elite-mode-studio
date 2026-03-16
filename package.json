@@ -1,0 +1,31 @@
+{
+  "name": "nvidia-rag-app",
+  "version": "1.0.0",
+  "description": "NVIDIA RAG Desktop App",
+  "main": "main.js",
+  "scripts": {
+    "dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
+    "build": "vite build",
+    "electron": "electron .",
+    "start": "vite build && electron ."
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.22.0",
+    "react-markdown": "^9.0.1",
+    "react-dropzone": "^14.2.3",
+    "lucide-react": "^0.383.0",
+    "fabric": "^6.4.3"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.2.1",
+    "concurrently": "^8.2.2",
+    "electron": "^29.1.4",
+    "vite": "^5.1.4",
+    "wait-on": "^7.2.0",
+    "tailwindcss": "^3.4.1",
+    "postcss": "^8.4.35",
+    "autoprefixer": "^10.4.18"
+  }
+}
