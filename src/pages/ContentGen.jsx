@@ -35,10 +35,12 @@ function getPersonaSettings() {
 
 function getOutSettings() {
   return {
-    include_9x16:     JSON.parse(localStorage.getItem('out_9x16')     ?? 'false'),
-    include_hook:     JSON.parse(localStorage.getItem('out_hook')      ?? 'false'),
-    include_category: JSON.parse(localStorage.getItem('out_category')  ?? 'false'),
-    freshness:        localStorage.getItem('freshness') ?? '2days',
+    include_9x16:      JSON.parse(localStorage.getItem('out_9x16')      ?? 'false'),
+    include_hook:      JSON.parse(localStorage.getItem('out_hook')       ?? 'false'),
+    include_category:  JSON.parse(localStorage.getItem('out_category')   ?? 'false'),
+    freshness:         localStorage.getItem('freshness') ?? '2days',
+    title_min_length:  parseInt(localStorage.getItem('out_title_min')    ?? '50'),
+    title_max_length:  parseInt(localStorage.getItem('out_title_max')    ?? '100'),
     ...getPersonaSettings(),
   }
 }

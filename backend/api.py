@@ -4,7 +4,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Optional
 import tempfile, os, logging, asyncio
-from rag import NvidiaRAG, TRENDING_QUERIES, FRESHNESS_CONFIG, classify_error, load_search_config, save_search_config
+from rag import NvidiaRAG, TRENDING_QUERIES, FRESHNESS_CONFIG, classify_error, load_search_config, save_search_config, DOCS_DIR
 from config import NVIDIA_API_KEY, TAVILY_API_KEY, LLM_MODEL, EMBED_MODEL, RERANK_MODEL
 from dotenv import load_dotenv, set_key
 import storage
@@ -60,6 +60,8 @@ class InstagramBody(BaseModel):
     platform_target: Optional[str] = "instagram"
     caption_length: Optional[str] = "medium"
     custom_instructions: Optional[str] = ""
+    title_min_length: Optional[int] = 50
+    title_max_length: Optional[int] = 100
 
 class PersonaConfigBody(BaseModel):
     persona: Optional[str] = "journalist"
@@ -67,6 +69,14 @@ class PersonaConfigBody(BaseModel):
     platform_target: Optional[str] = "instagram"
     caption_length: Optional[str] = "medium"
     custom_instructions: Optional[str] = ""
+
+class OutputConfigBody(BaseModel):
+    title_min_length: Optional[int] = 50
+    title_max_length: Optional[int] = 100
+    include_hook: Optional[bool] = False
+    include_category: Optional[bool] = False
+    include_9x16: Optional[bool] = False
+    include_sources_block: Optional[bool] = True
 
 class BatchBody(BaseModel):
     category: str
@@ -190,6 +200,8 @@ def generate_instagram(body: InstagramBody):
             platform_target=body.platform_target or "instagram",
             caption_length=body.caption_length or "medium",
             custom_instructions=body.custom_instructions or "",
+            title_min_length=body.title_min_length or 50,
+            title_max_length=body.title_max_length or 100,
         )
         post_id = storage.save_post(body.topic, "instagram", result["content"], result["sources"])
         result["post_id"] = post_id
@@ -299,6 +311,43 @@ def update_search_config(body: SearchConfigBody):
     if pipeline is not None:
         pipeline.reload_config()
     return {"status": "saved", "config": cfg}
+
+@app.get("/api/output-config")
+def get_output_config():
+    cfg = load_search_config()
+    return cfg.get("output", {
+        "title_min_length": 50, "title_max_length": 100,
+        "include_hook": False, "include_category": False,
+        "include_9x16": False, "include_sources_block": True,
+    })
+
+@app.post("/api/output-config")
+def save_output_config(body: OutputConfigBody):
+    cfg = load_search_config()
+    cfg["output"] = body.dict()
+    save_search_config(cfg)
+    return {"status": "saved"}
+
+@app.get("/api/system-prompt")
+def get_system_prompt():
+    path = os.path.join(DOCS_DIR, "elite_mode_instruction.md")
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return {"content": f.read(), "path": path}
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="System prompt file not found.")
+
+class SystemPromptBody(BaseModel):
+    content: str
+
+@app.post("/api/system-prompt")
+def save_system_prompt(body: SystemPromptBody):
+    if not body.content.strip():
+        raise HTTPException(status_code=400, detail="Prompt content cannot be empty.")
+    path = os.path.join(DOCS_DIR, "elite_mode_instruction.md")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(body.content)
+    return {"status": "saved"}
 
 @app.get("/api/persona-config")
 def get_persona_config():

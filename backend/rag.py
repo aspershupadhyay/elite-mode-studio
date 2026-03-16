@@ -101,6 +101,14 @@ _DEFAULT_CONFIG = {
         "rerank_model": RERANK_MODEL,
         "max_tokens": 4096,
         "top_n_rerank": 4
+    },
+    "output": {
+        "title_min_length": 50,
+        "title_max_length": 100,
+        "include_hook": False,
+        "include_category": False,
+        "include_9x16": False,
+        "include_sources_block": True,
     }
 }
 
@@ -112,6 +120,9 @@ def load_search_config() -> dict:
         cfg = json.loads(json.dumps(_DEFAULT_CONFIG))
         cfg["tavily"].update(saved.get("tavily", {}))
         cfg["nvidia"].update(saved.get("nvidia", {}))
+        cfg["output"].update(saved.get("output", {}))
+        if "persona" in saved:
+            cfg["persona"] = saved["persona"]
         return cfg
     except Exception:
         return json.loads(json.dumps(_DEFAULT_CONFIG))
@@ -308,7 +319,8 @@ def load_instagram_prompt(include_hook=False, include_category=False,
                           include_9x16=False, freshness="2days",
                           persona="journalist", tone="analytical",
                           platform_target="instagram", caption_length="medium",
-                          custom_instructions="") -> str:
+                          custom_instructions="",
+                          title_min_length=50, title_max_length=100) -> str:
     path = os.path.join(DOCS_DIR, "elite_mode_instruction.md")
     if not os.path.exists(path):
         raise FileNotFoundError(f"System prompt not found at {path}")
@@ -318,6 +330,8 @@ def load_instagram_prompt(include_hook=False, include_category=False,
     content = content.replace("{HOOK_BLOCK}",     HOOK_BLOCK     if include_hook     else "NOTE: Skip hook_text block entirely.")
     content = content.replace("{CATEGORY_BLOCK}", CATEGORY_BLOCK if include_category else "NOTE: Skip category block entirely.")
     content = content.replace("{PORTRAIT_BLOCK}", PORTRAIT_BLOCK if include_9x16     else "NOTE: Skip image_prompt_9x16 block entirely.")
+    content = content.replace("{TITLE_MIN_LEN}",  str(title_min_length))
+    content = content.replace("{TITLE_MAX_LEN}",  str(title_max_length))
     # Persona modifier
     persona_mod = PERSONA_MODIFIERS.get(persona, "")
     if persona_mod:
@@ -622,7 +636,8 @@ class NvidiaRAG:
                            include_category=False, freshness="2days",
                            persona="journalist", tone="analytical",
                            platform_target="instagram", caption_length="medium",
-                           custom_instructions="") -> dict:
+                           custom_instructions="",
+                           title_min_length=50, title_max_length=100) -> dict:
         cfg_label = FRESHNESS_CONFIG.get(freshness, FRESHNESS_CONFIG["2days"])["label"]
         query     = build_search_query(topic, freshness)
 
@@ -646,7 +661,9 @@ class NvidiaRAG:
                                        tone=tone,
                                        platform_target=platform_target,
                                        caption_length=caption_length,
-                                       custom_instructions=custom_instructions)
+                                       custom_instructions=custom_instructions,
+                                       title_min_length=title_min_length,
+                                       title_max_length=title_max_length)
         citation_rule = (
             "\n\nCRITICAL SOURCE RULE: Every fact in your output MUST come from the research context above. "
             "Each source is labeled [SOURCE: Publisher | url]. Cite inline like 'per Reuters'. "

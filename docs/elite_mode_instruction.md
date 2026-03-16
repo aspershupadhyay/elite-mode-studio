@@ -1,4 +1,4 @@
-# ELITE MODE CONTENT FORGE — v8.4
+# ELITE MODE CONTENT FORGE — v9.0
 # @elitemode.bro | Autonomous Content Engine
 
 ---
@@ -49,27 +49,44 @@ Every number must be defensible. Use ranges or qualifiers when uncertain. Never 
 
 **WHAT A GREAT TITLE IS:**
 - ALL CAPS. Every word.
-- 60–100 characters maximum. Hard limit. Count before submitting.
+- {TITLE_MIN_LEN}–{TITLE_MAX_LEN} characters. Hard limits. Count before submitting.
 - One fact. One sentence. No double dashes. No second clause.
-- Contains: one named actor + one specific action + one specific number OR consequence
+- MUST CONTAIN: one named actor + one specific action + one SPECIFIC NUMBER (dollar, %, count, date)
+- The number is NOT optional. A title without a number is a failing title.
 - Reads like a friend texting you the single most remarkable thing they just read
 
+**THE NUMBER REQUIREMENT — NON-NEGOTIABLE:**
+Every single title MUST include at least one specific number. This is what separates a real fact from a vague claim.
+- GOOD: "$400B", "18%", "3 MILLION", "2024", "31-1", "$200M", "147 NATIONS"
+- BAD: "LAUNCHES", "STARTS", "OPENS", "BEGINS", "REACHES DEAL" — these have no number and are rejected
+
+**TITLE SELF-CHECK — run this before outputting:**
+1. Does the title contain a number ($, %, count, date)? If NO → rewrite with a number.
+2. Is it {TITLE_MIN_LEN}–{TITLE_MAX_LEN} characters? If not → adjust.
+3. Does it have a " — " double dash? If YES → cut to one clause.
+4. Is every word ALL CAPS? If NO → fix.
+5. Does it name a specific actor (country, person, company)? If vague → make it specific.
+
 **THE TIGHT TITLE TEST:**
-If your title has a " — " (double dash) in it, you have two sentences. Cut it to one.
-If your title is over 100 characters, you are padding. Find the single sharpest fact and cut everything else.
+If your title has " — " in it, you have two sentences. Cut it to one.
 The title does not need to tell the whole story. The caption does that. The title's only job is to make them read the caption.
 
 **BANNED WORDS:**
 demands, slams, blasts, warns, threatens, escalates, shocking, unprecedented, bombshell, explosive, game changer, massive, huge, enormous, tensions mount, officials warn, world watches, all eyes on
 
-**GREAT TITLE EXAMPLES — STUDY THE LENGTH AND PUNCH:**
-"CHINA SETTLED $400B IN OIL TRADES IN YUAN IN 2024" — 50 chars ✓
-"OPENAI WINS $200M PENTAGON CONTRACT ANTHROPIC WAS BLOCKED FROM" — 62 chars ✓
-"IRAN NOW REQUIRES YUAN FOR ALL HORMUZ OIL SHIPMENTS" — 52 chars ✓
-"FED ECONOMISTS: RATE HIKES DON'T RELIABLY REDUCE INFLATION" — 58 chars ✓
-"SAUDI ARABIA'S BIGGEST 2025 SPEND IS SOLAR, NOT OIL" — 52 chars ✓
+**GREAT TITLE EXAMPLES — STUDY THE NUMBER IN EVERY ONE:**
+"CHINA SETTLED $400B IN OIL TRADES IN YUAN IN 2024" — ✓ $400B + 2024
+"OPENAI WINS $200M PENTAGON CONTRACT ANTHROPIC WAS BLOCKED FROM" — ✓ $200M
+"IRAN NOW REQUIRES YUAN FOR ALL HORMUZ OIL SHIPMENTS" — ✓ specific noun chain
+"FED ECONOMISTS: RATE HIKES DON'T RELIABLY REDUCE INFLATION" — ✓ direct challenge to a number-based policy
+"SAUDI ARABIA'S BIGGEST 2025 SPEND IS SOLAR, NOT OIL" — ✓ 2025
 
-Notice: short, specific, one idea, one punch. The reader wants to know more — they read the caption.
+**FAILING TITLE EXAMPLES — NEVER DO THIS:**
+"US, CHINA LAUNCH TRADE TALKS IN PARIS" — ✗ No number. Vague. Any reporter could write this.
+"IRAN STRIKES GULF NEIGHBORS, OIL SHIPPING COLLAPSES" — ✗ No number. What percentage? Which ports?
+"RUSSIA AND UKRAINE REACH CEASEFIRE AGREEMENT" — ✗ No number. How long? What territory?
+
+The fix: dig into the research context for the specific number that makes this story real.
 
 ---
 
@@ -94,9 +111,10 @@ Output: IRAN, YUAN, HORMUZ, OIL, SHIPMENTS
 ## OUTPUT BLOCKS
 
 ```title
-One title. ALL CAPS. 60–100 characters hard limit.
-One named actor + one specific action + one number or consequence.
-No double dashes. No second clause. Count the characters.
+One title. ALL CAPS. {TITLE_MIN_LEN}–{TITLE_MAX_LEN} characters.
+MANDATORY: one named actor + one specific action + one SPECIFIC NUMBER.
+No double dashes. No second clause. A title without a number is a failing title.
+Run the 5-point self-check above before outputting.
 ```
 
 {HOOK_BLOCK}

@@ -3,7 +3,7 @@
  * Tabs: General · Search Engine · AI Models · Output · Appearance
  * Design: Slate/violet palette, zero EliteMode green, full customisation
  */
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { apiFetch, apiPost } from '../api.js'
 
 // ─── Icons (inline SVG, hand-picked) ────────────────────────────────────────
@@ -800,58 +800,240 @@ function TabAIPersona() {
 }
 
 // ─── Tab: Output ──────────────────────────────────────────────────────────────
+function RangeSlider({ label, value, min, max, onChange, unit='' }) {
+  return (
+    <div style={{ marginBottom:16 }}>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
+        <span style={{ fontSize:12, color:T.text2 }}>{label}</span>
+        <span style={{ fontSize:13, fontWeight:700, color:T.violetL, fontFamily:'monospace' }}>
+          {value}{unit}
+        </span>
+      </div>
+      <input type="range" min={min} max={max} value={value}
+        onChange={e => onChange(Number(e.target.value))}
+        style={{ width:'100%', accentColor: T.violet, cursor:'pointer', height:4 }}
+      />
+      <div style={{ display:'flex', justifyContent:'space-between', marginTop:4 }}>
+        <span style={{ fontSize:10, color:T.text3 }}>{min}{unit}</span>
+        <span style={{ fontSize:10, color:T.text3 }}>{max}{unit}</span>
+      </div>
+    </div>
+  )
+}
+
 function TabOutput() {
-  const [out, setOut] = useState({
-    include_9x16:     JSON.parse(localStorage.getItem('out_9x16')    ?? 'false'),
-    include_hook:     JSON.parse(localStorage.getItem('out_hook')     ?? 'false'),
-    include_category: JSON.parse(localStorage.getItem('out_category') ?? 'false'),
+  const [cfg, setCfg] = useState({
+    title_min_length:    parseInt(localStorage.getItem('out_title_min') ?? '50'),
+    title_max_length:    parseInt(localStorage.getItem('out_title_max') ?? '100'),
+    include_9x16:        JSON.parse(localStorage.getItem('out_9x16')     ?? 'false'),
+    include_hook:        JSON.parse(localStorage.getItem('out_hook')      ?? 'false'),
+    include_category:    JSON.parse(localStorage.getItem('out_category')  ?? 'false'),
+    include_sources_block: JSON.parse(localStorage.getItem('out_sources') ?? 'true'),
   })
+  const [prompt, setPrompt]       = useState('')
+  const [promptEditing, setPromptEditing] = useState(false)
+  const [promptLoading, setPromptLoading] = useState(true)
+  const [promptSaving, setPromptSaving]   = useState(false)
+  const [promptSaved, setPromptSaved]     = useState(false)
+  const [cfgSaved, setCfgSaved]           = useState(false)
+  const [cfgSaving, setCfgSaving]         = useState(false)
+  const originalPromptRef = useRef('')
+
+  // Load system prompt from backend
+  useEffect(() => {
+    apiFetch('/api/system-prompt').then(({ data }) => {
+      if (data?.content) {
+        setPrompt(data.content)
+        originalPromptRef.current = data.content
+      }
+      setPromptLoading(false)
+    })
+  }, [])
+
   const setKey = (key, val) => {
-    localStorage.setItem(`out_${key.replace('include_','')}`, JSON.stringify(val))
-    setOut(s => ({...s, [key]: val}))
-    // Notify ContentGen so it re-reads getOutSettings without polling
+    const lsMap = {
+      title_min_length: 'out_title_min',
+      title_max_length: 'out_title_max',
+      include_9x16: 'out_9x16',
+      include_hook: 'out_hook',
+      include_category: 'out_category',
+      include_sources_block: 'out_sources',
+    }
+    localStorage.setItem(lsMap[key] || key, JSON.stringify(val))
+    setCfg(s => ({ ...s, [key]: val }))
     window.dispatchEvent(new CustomEvent('storageChange'))
   }
+
+  const saveOutputCfg = async () => {
+    setCfgSaving(true)
+    await apiPost('/api/output-config', cfg)
+    setCfgSaving(false); setCfgSaved(true)
+    setTimeout(() => setCfgSaved(false), 2500)
+    window.dispatchEvent(new CustomEvent('storageChange'))
+  }
+
+  const savePrompt = async () => {
+    setPromptSaving(true)
+    await apiPost('/api/system-prompt', { content: prompt })
+    originalPromptRef.current = prompt
+    setPromptSaving(false); setPromptSaved(true); setPromptEditing(false)
+    setTimeout(() => setPromptSaved(false), 2500)
+  }
+
+  const resetPrompt = () => {
+    setPrompt(originalPromptRef.current)
+    setPromptEditing(false)
+  }
+
   const OUTPUT_ROWS = [
-    { key:'include_9x16',     label:'9×16 Image Prompt',
-      desc:'Generate portrait format prompt for Instagram Stories & Reels (1080×1920)' },
-    { key:'include_hook',     label:'Hook Text',
-      desc:'5-word scroll-stopper line for the image overlay — max impact in minimum space' },
-    { key:'include_category', label:'Category Label',
-      desc:'Auto-classifies post into GEOPOLITICS / AI & TECH / FINANCE etc.' },
+    { key:'include_hook',          label:'Hook Text',
+      desc:'5-word scroll-stopper line for the image overlay' },
+    { key:'include_category',      label:'Category Label',
+      desc:'Auto-classifies: GEOPOLITICS / AI & TECH / FINANCE / CRYPTO / etc.' },
+    { key:'include_9x16',          label:'9×16 Portrait Prompt',
+      desc:'Portrait image prompt for Instagram Stories & Reels (1080×1920)' },
+    { key:'include_sources_block', label:'Verification Block',
+      desc:'Sources + confidence rating block at the end of each post' },
   ]
+
+  const placeholders = ['{DATE_RULE}','{HOOK_BLOCK}','{CATEGORY_BLOCK}','{PORTRAIT_BLOCK}','{TITLE_MIN_LEN}','{TITLE_MAX_LEN}']
+
   return (
     <div>
       <SectionHeader icon={Icons.sliders} title="Output Format"
-        subtitle="Control which content blocks are included in generated posts"/>
+        subtitle="Control exactly what the AI generates — title constraints, output blocks, and the full system prompt"/>
+
+      {/* Title length */}
       <Card>
-        <p style={{ fontSize:12, fontWeight:600, color:T.text, marginBottom:4 }}>Content Blocks</p>
+        <p style={{ fontSize:12, fontWeight:600, color:T.text, marginBottom:4 }}>Title Length</p>
+        <p style={{ fontSize:11, color:T.text3, marginBottom:20, lineHeight:1.6 }}>
+          Every generated title must fall within these character limits.
+          A minimum of 50 enforces specificity — short titles are almost always vague.
+        </p>
+        <RangeSlider label="Minimum characters (enforces specificity)"
+          value={cfg.title_min_length} min={30} max={80} unit=" chars"
+          onChange={v => setKey('title_min_length', v)}/>
+        <RangeSlider label="Maximum characters (prevents padding)"
+          value={cfg.title_max_length} min={70} max={160} unit=" chars"
+          onChange={v => setKey('title_max_length', v)}/>
+        <div style={{ padding:'10px 14px', background:T.violetBg,
+          border:`1px solid ${T.violetBd}`, borderRadius:8, fontSize:11, color:T.violetL }}>
+          Current range: <strong>{cfg.title_min_length}–{cfg.title_max_length} characters</strong>
+          {' '}· A number ($, %, count, date) is always required in every title
+        </div>
+      </Card>
+
+      {/* Output blocks */}
+      <Card>
+        <p style={{ fontSize:12, fontWeight:600, color:T.text, marginBottom:4 }}>Output Blocks</p>
         <p style={{ fontSize:11, color:T.text3, marginBottom:14, lineHeight:1.6 }}>
-          All off by default for minimal, clean output. Enable what you need.
+          Toggle which content fields the AI generates.
+          Title, highlight words, caption, and 16×9 image prompt are always included.
         </p>
         {OUTPUT_ROWS.map(({ key, label, desc }, i) => (
           <CardRow key={key} label={label} desc={desc} noBorder={i===OUTPUT_ROWS.length-1}>
-            <Toggle checked={out[key]} onChange={v=>setKey(key,v)}/>
+            <Toggle checked={cfg[key]} onChange={v=>setKey(key,v)}/>
           </CardRow>
         ))}
       </Card>
+
+      {/* Save output config */}
       <Card>
-        <div style={{ display:'flex', gap:12, alignItems:'flex-start' }}>
-          <div style={{ width:32, height:32, borderRadius:8, background:'rgba(16,185,129,0.08)',
-            border:'1px solid rgba(16,185,129,0.2)', display:'flex', alignItems:'center',
-            justifyContent:'center', flexShrink:0 }}>
-            <Icons.globe size={14} color={T.emerald}/>
-          </div>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
           <div>
-            <p style={{ fontSize:13, fontWeight:600, color:T.text, margin:0, marginBottom:5 }}>
-              Trusted Sources
-            </p>
-            <p style={{ fontSize:11, color:T.text3, lineHeight:1.7, margin:0 }}>
-              All news is fetched exclusively from Reuters, AP News, Bloomberg, BBC,
-              Financial Times, WSJ, The Guardian, CNBC, TechCrunch, and 25+ other verified
-              Tier-1 outlets. Configure the domain list in the Search Engine tab.
-            </p>
+            <p style={{ fontSize:13, fontWeight:600, color:T.text, margin:0 }}>Save Output Settings</p>
+            <p style={{ fontSize:11, color:T.text3, marginTop:3 }}>Syncs title lengths and block toggles to backend</p>
           </div>
+          <PrimaryBtn onClick={saveOutputCfg} loading={cfgSaving} small>
+            <Icons.check size={12}/>{cfgSaved ? 'Saved!' : 'Save'}
+          </PrimaryBtn>
+        </div>
+      </Card>
+
+      {/* System prompt editor */}
+      <Card>
+        <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:14 }}>
+          <div style={{ display:'flex', gap:10, alignItems:'flex-start' }}>
+            <div style={{ width:32, height:32, borderRadius:8, background:T.violetBg,
+              border:`1px solid ${T.violetBd}`, display:'flex', alignItems:'center',
+              justifyContent:'center', flexShrink:0, marginTop:2 }}>
+              <Icons.pen size={14} color={T.violetL}/>
+            </div>
+            <div>
+              <p style={{ fontSize:13, fontWeight:600, color:T.text, margin:0, marginBottom:4 }}>
+                AI System Prompt
+              </p>
+              <p style={{ fontSize:11, color:T.text3, lineHeight:1.6, margin:0 }}>
+                The full instruction set fed to the LLM before every generation.
+                Edit carefully — this controls tone, structure, title rules, and output format.
+              </p>
+            </div>
+          </div>
+          <div style={{ display:'flex', gap:8, flexShrink:0 }}>
+            {promptEditing ? (
+              <>
+                <button onClick={resetPrompt} style={{
+                  padding:'6px 12px', borderRadius:7, border:`1px solid ${T.border2}`,
+                  background:'transparent', color:T.text2, fontSize:11, cursor:'pointer'
+                }}>Cancel</button>
+                <PrimaryBtn onClick={savePrompt} loading={promptSaving} small>
+                  <Icons.check size={12}/>{promptSaved ? 'Saved!' : 'Save Prompt'}
+                </PrimaryBtn>
+              </>
+            ) : (
+              <button onClick={() => setPromptEditing(true)} style={{
+                padding:'6px 14px', borderRadius:7, border:`1px solid ${T.border2}`,
+                background:T.bg, color:T.text2, fontSize:11, cursor:'pointer',
+                display:'flex', alignItems:'center', gap:5,
+              }}>
+                <Icons.pen size={11}/>Edit
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Placeholder reference */}
+        <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:12 }}>
+          <span style={{ fontSize:10, color:T.text3, alignSelf:'center' }}>Placeholders:</span>
+          {placeholders.map(p => (
+            <span key={p} style={{ fontSize:10, padding:'2px 7px', borderRadius:4,
+              background: T.bg4, border:`1px solid ${T.border}`,
+              color:T.violetL, fontFamily:'monospace' }}>{p}</span>
+          ))}
+        </div>
+
+        {promptLoading ? (
+          <div style={{ height:200, display:'flex', alignItems:'center', justifyContent:'center',
+            background:T.bg, borderRadius:8, border:`1px solid ${T.border}` }}>
+            <span style={{ fontSize:12, color:T.text3 }}>Loading prompt…</span>
+          </div>
+        ) : (
+          <textarea
+            value={prompt}
+            onChange={e => setPrompt(e.target.value)}
+            readOnly={!promptEditing}
+            rows={18}
+            spellCheck={false}
+            style={{
+              width:'100%', padding:'12px 14px',
+              background: promptEditing ? T.bg : T.bg4,
+              border:`1px solid ${promptEditing ? T.violet : T.border}`,
+              borderRadius:8, color: promptEditing ? T.text : T.text2,
+              fontSize:11, fontFamily:'monospace', resize:'vertical',
+              outline:'none', lineHeight:1.7, boxSizing:'border-box',
+              transition:'all .2s', cursor: promptEditing ? 'text' : 'default',
+            }}
+          />
+        )}
+        <div style={{ display:'flex', justifyContent:'space-between', marginTop:6 }}>
+          <p style={{ fontSize:10, color:T.text3, margin:0 }}>
+            {prompt.length.toLocaleString()} characters · {prompt.split('\n').length} lines
+          </p>
+          {promptEditing && (
+            <p style={{ fontSize:10, color:T.amber, margin:0 }}>
+              Editing live — changes affect all future generations
+            </p>
+          )}
         </div>
       </Card>
     </div>
