@@ -240,7 +240,7 @@ const CHATGPT_STATUS_JS = `(function(){
     .filter(img => {
       const w = img.naturalWidth || img.width
       const h = img.naturalHeight || img.height
-      return w >= 200 && h >= 200
+      return w >= 600 && h >= 600   // 600px minimum — rejects blurry ~400px previews
     })
 
   // Detect "2 image choice" scenario — ChatGPT sometimes shows a selection UI
@@ -270,7 +270,10 @@ const CHATGPT_STATUS_JS = `(function(){
     imageUrl = best.src || null
   }
 
-  return JSON.stringify({ done: isIdle, generating: isGenerating, imageUrl, blurry, hasChoice, found: allCandidates.length })
+  // Debug: log all candidate URLs so we can see exactly what the DOM has
+  const debugUrls = allCandidates.map(i => i.src)
+
+  return JSON.stringify({ done: isIdle, generating: isGenerating, imageUrl, blurry, hasChoice, found: allCandidates.length, debugUrls })
 })()` as const
 
 // Random human-like mouse-move simulation (fires pointer events on webview)
@@ -947,6 +950,10 @@ const AiBrowser = forwardRef<AiBrowserHandle, AiBrowserProps>(function AiBrowser
   const wvMap         = useRef<Map<string, WebviewElement>>(new Map())
   const activePostRef = useRef<string | null>(null)
 
+  // CDN network-intercepted URLs — Strategy A (same as Python's net_bucket).
+  // Populated by main process webRequest.onCompleted before DOM img.src updates.
+  const cdnBucketRef  = useRef<string[]>([])
+
   // Auto-queue state
   const autoQueueRef    = useRef<ImageGenQueueJob[]>([])
   const autoRunningRef  = useRef(false)
@@ -998,6 +1005,23 @@ const AiBrowser = forwardRef<AiBrowserHandle, AiBrowserProps>(function AiBrowser
       if (wv) wv.reload()
     })
   }, [activeId])
+
+  // ── CDN network interception listener ────────────────────────────────────
+  // Receives full-res oaiusercontent URLs from main process webRequest.onCompleted.
+  // These arrive BEFORE the DOM img.src updates — Strategy A for image capture.
+  useEffect(() => {
+    if (!window.api.onCdnImageCaptured) return
+    const unsub = window.api.onCdnImageCaptured((data: { url: string; sizeBytes: number }) => {
+      if (
+        !cdnBucketRef.current.includes(data.url) &&
+        (data.sizeBytes === 0 || data.sizeBytes > 50_000)
+      ) {
+        cdnBucketRef.current.push(data.url)
+        window.api.log?.(`[CDN] Network-intercepted: ${data.url.slice(0, 80)} (${Math.round(data.sizeBytes / 1024)}KB)`)
+      }
+    })
+    return () => { unsub?.(); cdnBucketRef.current = [] }
+  }, [])
 
   // ── Persist prompts ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -1380,14 +1404,40 @@ const AiBrowser = forwardRef<AiBrowserHandle, AiBrowserProps>(function AiBrowser
       let generationDoneAt = 0  // timestamp when stop-button disappeared
       const RENDER_BUFFER_MS = 40_000  // 40s after generation done — mirrors Python logic
 
+      // Snapshot CDN bucket at job start — only URLs added AFTER this are from this generation
+      const cdnSnapshotAtJobStart = cdnBucketRef.current.slice()
+
       while (Date.now() < deadline && !autoCancelRef.current && !captured) {
         await sleep(1500)
         try {
+          // ── Strategy A: network-intercepted CDN URL ──────────────────────
+          // Check bucket FIRST — these arrive from network layer before DOM updates.
+          // Only consider URLs that weren't present at job start (scoped to this gen).
+          const networkUrl = [...cdnBucketRef.current]
+            .reverse()
+            .find(u => !cdnSnapshotAtJobStart.includes(u))
+
+          if (networkUrl) {
+            window.api.log?.(`[ImageGen] Strategy A — network URL: ${networkUrl.slice(0, 80)}`)
+            setToast(`Network-captured image — waiting 5s for CDN encode… | ${job.title}`)
+            // CDN fires when transfer STARTS, not when encoding completes.
+            // Wait 5s before downloading so the full-res bytes are ready.
+            await sleep(5000)
+            captured = true
+            await handleImageFound(networkUrl, job.postId)
+            break
+          }
+
+          // ── Strategy B: DOM polling fallback ────────────────────────────
           const raw = await wv.executeJavaScript(CHATGPT_STATUS_JS)
           const st = JSON.parse(raw as string) as {
             done: boolean; generating: boolean
             imageUrl: string | null; blurry: boolean
             hasChoice: boolean; found: number
+            debugUrls?: string[]
+          }
+          if (st.debugUrls?.length) {
+            window.api.log(`[ImageGen] DOM URLs found (${st.debugUrls.length}):`, st.debugUrls.map(u => u.slice(0, 120)))
           }
 
           // ChatGPT showed 2 image options → click the first automatically

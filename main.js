@@ -577,6 +577,7 @@ electron_1.ipcMain.handle('session-load', () => {
 });
 // ── IPC: browser image download ─────────────────────────────────────────────
 electron_1.ipcMain.handle('browser-download-image', async (_event, { url: imageUrl, postId }) => {
+    console.log(`[browser-download] FULL URL to download: ${imageUrl}`);
     const os = await Promise.resolve().then(() => __importStar(require('os')));
     const { session: electronSession } = await Promise.resolve().then(() => __importStar(require('electron')));
     const tmpDir = path_1.default.join(os.default.tmpdir(), 'elite_images');
@@ -657,6 +658,27 @@ electron_1.app.whenReady().then(async () => {
         headers['User-Agent'] = CLEAN_UA;
         delete headers['X-Electron'];
         callback({ requestHeaders: headers });
+    });
+    // ── CDN image network interception (Strategy A) ────────────────────────
+    // Mirrors Python's page.on("response") in chatgpt_agent.py.
+    // Arms once on the ai-browser session — fires for every oaiusercontent CDN
+    // response. Sends full-res URLs to renderer BEFORE the DOM img.src updates.
+    // Filtered: image/* content-type only, > 50KB (rejects thumbnails/icons).
+    aiSession.webRequest.onCompleted({ urls: [
+            'https://*.oaiusercontent.com/*',
+            'https://files.oaiusercontent.com/*',
+            'https://chatgpt.com/backend-api/estuary/*',
+        ] }, (details) => {
+        if (details.statusCode !== 200)
+            return;
+        const ct = ((details.responseHeaders?.['content-type'] ?? details.responseHeaders?.['Content-Type'] ?? [''])[0]) || '';
+        if (!ct.startsWith('image/'))
+            return;
+        const cl = parseInt((details.responseHeaders?.['content-length'] ?? details.responseHeaders?.['Content-Length'] ?? ['0'])[0] || '0');
+        if (cl > 0 && cl < 50000)
+            return; // skip tiny thumbnails/icons
+        console.log(`[cdn-intercept] FULL URL: ${details.url} (${Math.round(cl / 1024)}KB)`);
+        mainWindow?.webContents.send('cdn-image-captured', { url: details.url, sizeBytes: cl });
     });
     // Intercept ALL mainFrame navigations to hard-blocked auth domains.
     //

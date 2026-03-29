@@ -508,6 +508,7 @@ ipcMain.handle('session-load', (): SessionData | null => {
 
 // ── IPC: browser image download ─────────────────────────────────────────────
 ipcMain.handle('browser-download-image', async (_event: IpcMainInvokeEvent, { url: imageUrl, postId }: { url: string; postId: string }): Promise<{ tmpPath: string; success: boolean }> => {
+  console.log(`[browser-download] FULL URL to download: ${imageUrl}`)
   const os     = await import('os')
   const { session: electronSession } = await import('electron')
   const tmpDir = path.join(os.default.tmpdir(), 'elite_images')
@@ -598,6 +599,32 @@ app.whenReady().then(async () => {
     delete headers['X-Electron']
     callback({ requestHeaders: headers })
   })
+
+  // ── CDN image network interception (Strategy A) ────────────────────────
+  // Mirrors Python's page.on("response") in chatgpt_agent.py.
+  // Arms once on the ai-browser session — fires for every oaiusercontent CDN
+  // response. Sends full-res URLs to renderer BEFORE the DOM img.src updates.
+  // Filtered: image/* content-type only, > 50KB (rejects thumbnails/icons).
+  aiSession.webRequest.onCompleted(
+    { urls: [
+      'https://*.oaiusercontent.com/*',
+      'https://files.oaiusercontent.com/*',
+      'https://chatgpt.com/backend-api/estuary/*',
+    ]},
+    (details) => {
+      if (details.statusCode !== 200) return
+      const ct = (
+        (details.responseHeaders?.['content-type'] ?? details.responseHeaders?.['Content-Type'] ?? [''])[0]
+      ) || ''
+      if (!ct.startsWith('image/')) return
+      const cl = parseInt(
+        (details.responseHeaders?.['content-length'] ?? details.responseHeaders?.['Content-Length'] ?? ['0'])[0] || '0'
+      )
+      if (cl > 0 && cl < 50_000) return  // skip tiny thumbnails/icons
+      console.log(`[cdn-intercept] FULL URL: ${details.url} (${Math.round(cl / 1024)}KB)`)
+      mainWindow?.webContents.send('cdn-image-captured', { url: details.url, sizeBytes: cl })
+    }
+  )
 
   // Intercept ALL mainFrame navigations to hard-blocked auth domains.
   //
