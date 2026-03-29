@@ -1103,17 +1103,17 @@ const AiBrowser = forwardRef<AiBrowserHandle, AiBrowserProps>(function AiBrowser
 
   // ── Image download + inject (called once per job with confirmed sharp URL) ─
   const handleImageFound = useCallback(async (src: string, postId: string): Promise<void> => {
-    console.log('[ImageGen] handleImageFound — postId:', postId, 'url:', src.slice(0, 80))
+    window.api.log('[ImageGen] handleImageFound — postId:', postId, 'url:', src.slice(0, 80))
 
     if (!window.api.downloadBrowserImage) {
-      console.error('[ImageGen] downloadBrowserImage IPC not available')
+      window.api.log('[ImageGen][ERROR] downloadBrowserImage IPC not available')
       setPrompts(prev => prev.map(p => p.postId === postId ? { ...p, status: 'error', error: 'IPC not available' } : p))
       return
     }
 
     setToast(`Downloading image for post ${postId}…`)
     const { tmpPath, success } = await window.api.downloadBrowserImage({ url: src, postId })
-    console.log('[ImageGen] download result — success:', success, 'path:', tmpPath)
+    window.api.log('[ImageGen] download result — success:', success, 'path:', tmpPath)
 
     if (!success || !tmpPath) {
       setPrompts(prev => prev.map(p => p.postId === postId ? { ...p, status: 'error', error: 'Download failed — check console' } : p))
@@ -1127,7 +1127,7 @@ const AiBrowser = forwardRef<AiBrowserHandle, AiBrowserProps>(function AiBrowser
     setTimeout(() => setToast(null), 4000)
 
     // Notify App.tsx → updates generatedImages map → DesignStudio picks it up
-    console.log('[ImageGen] calling onImageReady — postId:', postId, 'path:', tmpPath)
+    window.api.log('[ImageGen] calling onImageReady — postId:', postId, 'path:', tmpPath)
     onImageReady?.(postId, tmpPath)
 
     // Backend Laplacian quality check (non-blocking, informational only)
@@ -1135,7 +1135,7 @@ const AiBrowser = forwardRef<AiBrowserHandle, AiBrowserProps>(function AiBrowser
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ tmp_path: tmpPath }),
     }).then(r => r.json()).then((d: { sharp: boolean; score: number }) => {
-      console.log('[ImageGen] backend quality check — sharp:', d.sharp, 'score:', d.score)
+      window.api.log('[ImageGen] backend quality check — sharp:', d.sharp, 'score:', d.score)
       if (!d.sharp) {
         setPrompts(prev => prev.map(p => p.postId === postId ? { ...p, status: 'error', error: `Blurry (score ${d.score.toFixed(0)}) — retry` } : p))
       }
@@ -1202,7 +1202,7 @@ const AiBrowser = forwardRef<AiBrowserHandle, AiBrowserProps>(function AiBrowser
               if (found) {
                 clearTimeout(timer)
                 settled = true
-                console.log('[ImageGen] ChatGPT input + send button ready — 2s settle buffer')
+                window.api.log('[ImageGen] ChatGPT input + send button ready — 2s settle buffer')
                 // 2s buffer — ChatGPT GPT URLs do a second redirect after input appears
                 setTimeout(() => resolve(true), 2000)
               } else if (++attempts < 60) {
@@ -1210,7 +1210,7 @@ const AiBrowser = forwardRef<AiBrowserHandle, AiBrowserProps>(function AiBrowser
               } else {
                 clearTimeout(timer)
                 settled = true
-                console.warn('[ImageGen] waitNetworkIdle: timed out after 60 polls')
+                window.api.log('[ImageGen][WARN] waitNetworkIdle: timed out after 60 polls')
                 resolve(false)
               }
             }).catch(() => { if (++attempts < 60) setTimeout(poll, 500) })
@@ -1315,7 +1315,7 @@ const AiBrowser = forwardRef<AiBrowserHandle, AiBrowserProps>(function AiBrowser
       try {
         const raw = await wv.executeJavaScript(buildInjectorScript(prefixedPrompt))
         const res = JSON.parse(raw as string) as { success: boolean; error?: string }
-        console.log(`[ImageGen] Inject result:`, res)
+        window.api.log(`[ImageGen] Inject result:`, res)
         if (!res.success) {
           setPrompts(prev => prev.map(p => p.postId === job.postId ? { ...p, status: 'error' as const, error: res.error || 'Inject failed' } : p))
           activePostRef.current = null
@@ -1323,7 +1323,7 @@ const AiBrowser = forwardRef<AiBrowserHandle, AiBrowserProps>(function AiBrowser
           continue
         }
       } catch (e) {
-        console.error(`[ImageGen] Inject threw:`, e)
+        window.api.log(`[ImageGen][ERROR] Inject threw:`, e)
         setPrompts(prev => prev.map(p => p.postId === job.postId ? { ...p, status: 'error' as const, error: String(e) } : p))
         activePostRef.current = null
         await sleep(1500)
@@ -1337,7 +1337,7 @@ const AiBrowser = forwardRef<AiBrowserHandle, AiBrowserProps>(function AiBrowser
       //   4. Retry up to 5x if image is still soft
       setPrompts(prev => prev.map(p => p.postId === job.postId ? { ...p, status: 'waiting_image' as const } : p))
       setToast(`Generating image for: ${job.title}`)
-      console.log(`[ImageGen] ── Starting capture loop for: ${job.title} ──`)
+      window.api.log(`[ImageGen] ── Starting capture loop for: ${job.title} ──`)
 
       const PHASE_TIMEOUT = 4 * 60 * 1000
       const deadline = Date.now() + PHASE_TIMEOUT
@@ -1375,7 +1375,7 @@ const AiBrowser = forwardRef<AiBrowserHandle, AiBrowserProps>(function AiBrowser
           if (generationStarted && !st.generating && !generationDone) {
             generationDone = true
             generationDoneAt = Date.now()
-            console.log('[ImageGen] Generation complete — starting render buffer')
+            window.api.log('[ImageGen] Generation complete — starting render buffer')
             setToast(`Generation complete — waiting for CDN… | ${job.title}`)
           }
 
@@ -1389,7 +1389,7 @@ const AiBrowser = forwardRef<AiBrowserHandle, AiBrowserProps>(function AiBrowser
           const sharpResult = JSON.parse(sharpRaw as string) as { sharp: boolean; score: number; reason: string }
 
           setToast(`Score: ${sharpResult.score.toFixed(0)} ${sharpResult.sharp ? '✓ sharp' : '— waiting for full-res…'} | ${job.title}`)
-          console.log(`[ImageGen] ${job.title} — sharp:${sharpResult.sharp} score:${sharpResult.score.toFixed(0)} blurry:${st.blurry} generationDone:${generationDone}`)
+          window.api.log(`[ImageGen] ${job.title} — sharp:${sharpResult.sharp} score:${sharpResult.score.toFixed(0)} blurry:${st.blurry} generationDone:${generationDone}`)
 
           if (sharpResult.sharp && !st.blurry) {
             // Full-res sharp image confirmed — capture it
@@ -1403,7 +1403,7 @@ const AiBrowser = forwardRef<AiBrowserHandle, AiBrowserProps>(function AiBrowser
             const elapsed = Date.now() - generationDoneAt
             if (elapsed >= RENDER_BUFFER_MS) {
               // Render buffer expired — take what we have (best available)
-              console.log(`[ImageGen] Render buffer elapsed (${Math.round(elapsed/1000)}s) — capturing best available`)
+              window.api.log(`[ImageGen] Render buffer elapsed (${Math.round(elapsed/1000)}s) — capturing best available`)
               setToast(`Capturing best available image… | ${job.title}`)
               // Get latest URL in case CDN swapped it
               const raw2 = await wv.executeJavaScript(CHATGPT_STATUS_JS)
