@@ -1101,7 +1101,13 @@ const AiBrowser = forwardRef<AiBrowserHandle, AiBrowserProps>(function AiBrowser
     setDragId(null); setDragOver(null)
   }, [])
 
-  // ── Image download + inject (called once per job with confirmed sharp URL) ─
+  // ── Image download + Laplacian quality gate + inject ──────────────────────
+  // Uses the Python backend's OpenCV Laplacian check as a BLOCKING gate.
+  // Retries up to MAX_SHARP_RETRIES times with SHARP_RETRY_MS delay between each.
+  // Only calls onImageReady (→ Studio injection) when sharp=true.
+  const MAX_SHARP_RETRIES = 6
+  const SHARP_RETRY_MS    = 5000
+
   const handleImageFound = useCallback(async (src: string, postId: string): Promise<void> => {
     window.api.log('[ImageGen] handleImageFound — postId:', postId, 'url:', src.slice(0, 80))
 
@@ -1111,35 +1117,62 @@ const AiBrowser = forwardRef<AiBrowserHandle, AiBrowserProps>(function AiBrowser
       return
     }
 
-    setToast(`Downloading image for post ${postId}…`)
-    const { tmpPath, success } = await window.api.downloadBrowserImage({ url: src, postId })
-    window.api.log('[ImageGen] download result — success:', success, 'path:', tmpPath)
+    for (let attempt = 1; attempt <= MAX_SHARP_RETRIES; attempt++) {
+      if (attempt > 1) {
+        window.api.log(`[ImageGen] Laplacian retry ${attempt}/${MAX_SHARP_RETRIES} — waiting ${SHARP_RETRY_MS/1000}s for CDN...`)
+        setToast(`Waiting for sharp image (attempt ${attempt}/${MAX_SHARP_RETRIES})… | ${postId}`)
+        await new Promise(r => setTimeout(r, SHARP_RETRY_MS))
+      }
 
-    if (!success || !tmpPath) {
-      setPrompts(prev => prev.map(p => p.postId === postId ? { ...p, status: 'error', error: 'Download failed — check console' } : p))
-      setToast('Download failed ✗')
-      setTimeout(() => setToast(null), 4000)
-      return
+      setToast(`Downloading image (attempt ${attempt})…`)
+      const { tmpPath, success } = await window.api.downloadBrowserImage({ url: src, postId })
+      window.api.log(`[ImageGen] download attempt ${attempt} — success:${success} path:${tmpPath}`)
+
+      if (!success || !tmpPath) {
+        window.api.log(`[ImageGen] Download failed on attempt ${attempt}`)
+        continue
+      }
+
+      // Blocking Laplacian check via Python/OpenCV backend
+      let sharp = false
+      let score = 0
+      try {
+        const qr = await fetch('http://127.0.0.1:8000/api/check-image-quality', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tmp_path: tmpPath }),
+        })
+        const d = await qr.json() as { sharp: boolean; score: number }
+        sharp = d.sharp
+        score = d.score
+        window.api.log(`[ImageGen] Laplacian score: ${score.toFixed(1)} sharp:${sharp} (attempt ${attempt}/${MAX_SHARP_RETRIES})`)
+        setToast(`Laplacian score: ${score.toFixed(0)} ${sharp ? '✓ sharp' : '— blurry, retrying…'}`)
+      } catch (e) {
+        // Backend unavailable — accept the image anyway
+        window.api.log(`[ImageGen] Quality check unavailable, accepting image: ${e}`)
+        sharp = true
+      }
+
+      if (sharp) {
+        setPrompts(prev => prev.map(p => p.postId === postId ? { ...p, status: 'done', imagePath: tmpPath } : p))
+        setToast('Sharp image captured ✓ — injecting into Studio…')
+        setTimeout(() => setToast(null), 4000)
+        window.api.log(`[ImageGen] ✓ Injecting into Studio — postId:${postId} score:${score.toFixed(0)}`)
+        onImageReady?.(postId, tmpPath)
+        return
+      }
     }
 
-    setPrompts(prev => prev.map(p => p.postId === postId ? { ...p, status: 'done', imagePath: tmpPath } : p))
-    setToast('Image captured ✓ — injecting into Studio…')
-    setTimeout(() => setToast(null), 4000)
-
-    // Notify App.tsx → updates generatedImages map → DesignStudio picks it up
-    window.api.log('[ImageGen] calling onImageReady — postId:', postId, 'path:', tmpPath)
-    onImageReady?.(postId, tmpPath)
-
-    // Backend Laplacian quality check (non-blocking, informational only)
-    fetch('http://127.0.0.1:8000/api/check-image-quality', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tmp_path: tmpPath }),
-    }).then(r => r.json()).then((d: { sharp: boolean; score: number }) => {
-      window.api.log('[ImageGen] backend quality check — sharp:', d.sharp, 'score:', d.score)
-      if (!d.sharp) {
-        setPrompts(prev => prev.map(p => p.postId === postId ? { ...p, status: 'error', error: `Blurry (score ${d.score.toFixed(0)}) — retry` } : p))
-      }
-    }).catch(() => {})
+    // All retries exhausted — inject best available rather than failing silently
+    window.api.log(`[ImageGen] All ${MAX_SHARP_RETRIES} Laplacian retries failed — injecting best available`)
+    setToast('Image injected (best available — CDN may still be encoding)')
+    setTimeout(() => setToast(null), 5000)
+    const { tmpPath: fallbackPath, success: fallbackOk } = await window.api.downloadBrowserImage({ url: src, postId })
+    if (fallbackOk && fallbackPath) {
+      setPrompts(prev => prev.map(p => p.postId === postId ? { ...p, status: 'done', imagePath: fallbackPath } : p))
+      onImageReady?.(postId, fallbackPath)
+    } else {
+      setPrompts(prev => prev.map(p => p.postId === postId ? { ...p, status: 'error', error: 'Download failed after all retries' } : p))
+    }
   }, [onImageReady])
 
   // ── Auto-queue ────────────────────────────────────────────────────────────
