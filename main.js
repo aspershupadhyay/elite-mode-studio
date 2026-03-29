@@ -587,30 +587,41 @@ electron_1.ipcMain.handle('browser-download-image', async (_event, { url: imageU
     // Use the ai-browser session's fetch() so all cookies (ChatGPT/oaiusercontent auth)
     // are included automatically — this is why plain https.get() was failing.
     const aiSession = electronSession.fromPartition('persist:ai-browser');
+    // MIN_SIZE_BYTES: real DALL-E images are 300KB+. Blurry CDN previews are ~30-80KB.
+    // We retry until we get a file >= this size.
+    const MIN_SIZE_BYTES = 250000; // 250KB minimum — rejects blurry previews
     const tryDownload = async () => {
         try {
             const resp = await aiSession.fetch(imageUrl, {
                 headers: { 'User-Agent': CLEAN_UA, 'Referer': 'https://chatgpt.com/' },
             });
             if (!resp.ok)
-                return false;
+                return { ok: false, sizeKb: 0 };
             const buf = Buffer.from(await resp.arrayBuffer());
-            if (buf.length < 5000)
-                return false; // guard against tiny error responses
+            const sizeKb = Math.round(buf.length / 1024);
+            console.log(`[browser-download] attempt size: ${sizeKb}KB (min: ${MIN_SIZE_BYTES / 1024}KB)`);
+            if (buf.length < MIN_SIZE_BYTES)
+                return { ok: false, sizeKb };
             fs_1.default.writeFileSync(tmpPath, buf);
-            return true;
+            console.log(`[browser-download] saved ${sizeKb}KB → ${path_1.default.basename(tmpPath)}`);
+            return { ok: true, sizeKb };
         }
-        catch {
-            return false;
+        catch (e) {
+            console.error(`[browser-download] fetch error:`, e);
+            return { ok: false, sizeKb: 0 };
         }
     };
-    // Retry up to 4x with 3s gap (CDN URL may take a moment to become accessible)
-    for (let attempt = 0; attempt < 4; attempt++) {
-        if (attempt > 0)
-            await new Promise(r => setTimeout(r, 3000));
-        if (await tryDownload())
+    // Retry up to 8x with 5s gap — CDN takes time to encode the full-res version
+    for (let attempt = 0; attempt < 8; attempt++) {
+        if (attempt > 0) {
+            console.log(`[browser-download] retry ${attempt}/8 — waiting 5s for CDN full-res...`);
+            await new Promise(r => setTimeout(r, 5000));
+        }
+        const result = await tryDownload();
+        if (result.ok)
             return { tmpPath, success: true };
     }
+    console.error(`[browser-download] all retries failed — image never reached ${MIN_SIZE_BYTES / 1024}KB`);
     return { tmpPath: '', success: false };
 });
 // ── IPC: image generation pipeline ────────────────────────────────────────
