@@ -8,18 +8,21 @@ export default function ForgeTimer({ streamActive }: ForgeTimerProps): React.Rea
   const [elapsedMs,  setElapsedMs]  = useState(0)
   const [completed,  setCompleted]  = useState(false)
   const [visible,    setVisible]    = useState(false)
-  const startTimeRef = useRef<number | null>(null)
-  const intervalRef  = useRef<ReturnType<typeof setInterval> | null>(null)
-  const fadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const startTimeRef  = useRef<number | null>(null)
+  const intervalRef   = useRef<ReturnType<typeof setInterval> | null>(null)
+  const fadeTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     if (streamActive) {
-      // Rising edge — start fresh
+      // Rising edge — cancel any in-flight fade/reset, start fresh
+      if (fadeTimerRef.current)  { clearTimeout(fadeTimerRef.current);  fadeTimerRef.current  = null }
+      if (resetTimerRef.current) { clearTimeout(resetTimerRef.current); resetTimerRef.current = null }
+
       startTimeRef.current = Date.now()
       setElapsedMs(0)
       setCompleted(false)
       setVisible(true)
-      if (fadeTimerRef.current) { clearTimeout(fadeTimerRef.current); fadeTimerRef.current = null }
 
       intervalRef.current = setInterval(() => {
         setElapsedMs(Date.now() - (startTimeRef.current ?? Date.now()))
@@ -29,26 +32,31 @@ export default function ForgeTimer({ streamActive }: ForgeTimerProps): React.Rea
       if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null }
       if (startTimeRef.current !== null) {
         setCompleted(true)
-        // Fade out after 8s
+        // Fade out after 8s, then reset internal state after the 1s opacity transition
         fadeTimerRef.current = setTimeout(() => {
           setVisible(false)
-          setTimeout(() => {
+          resetTimerRef.current = setTimeout(() => {
             setElapsedMs(0)
             setCompleted(false)
             startTimeRef.current = null
-          }, 1000) // wait for opacity transition
+            resetTimerRef.current = null
+          }, 1000)
+          fadeTimerRef.current = null
         }, 8000)
       }
     }
     return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current)
+      if (intervalRef.current)   clearInterval(intervalRef.current)
+      if (fadeTimerRef.current)  { clearTimeout(fadeTimerRef.current);  fadeTimerRef.current  = null }
+      if (resetTimerRef.current) { clearTimeout(resetTimerRef.current); resetTimerRef.current = null }
     }
   }, [streamActive])
 
   // Cleanup on unmount
   useEffect(() => () => {
-    if (intervalRef.current)  clearInterval(intervalRef.current)
-    if (fadeTimerRef.current) clearTimeout(fadeTimerRef.current)
+    if (intervalRef.current)   clearInterval(intervalRef.current)
+    if (fadeTimerRef.current)  clearTimeout(fadeTimerRef.current)
+    if (resetTimerRef.current) clearTimeout(resetTimerRef.current)
   }, [])
 
   if (!visible && elapsedMs === 0) return null
