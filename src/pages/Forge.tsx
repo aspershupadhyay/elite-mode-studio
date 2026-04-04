@@ -12,7 +12,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import PageShell from '../components/PageShell'
 import PostEditorModal from '../components/PostEditorModal'
-import ForgeTimer from '../components/ForgeTimer'
 import { apiFetch, apiPost, apiStream } from '../api'
 import { getTemplates } from '../studio/data/templateStorage'
 import { getActiveProfile, getProfiles, setActiveProfile } from '../utils/profileStorage'
@@ -171,6 +170,9 @@ export default function Forge({ onSendToStudio, onBatchToStudio, generatedImages
   const [campaignCat,   setCampaignCat]   = useState<string>('GEOPOLITICS')
   const [campaignCount, setCampaignCount] = useState<string>('3')
   const [streamActive,  setStreamActive]  = useState<boolean>(false)
+  const [elapsedMs,     setElapsedMs]     = useState<number>(0)
+  const timerStartRef   = useRef<number | null>(null)
+  const timerIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const [campaignError, setCampaignError] = useState<string>('')
   const [campaignBrief, setCampaignBrief] = useState<CampaignBriefData | null>(null)
   const [streamPosts,   setStreamPosts]   = useState<StreamPost[]>([])
@@ -184,6 +186,20 @@ export default function Forge({ onSendToStudio, onBatchToStudio, generatedImages
   useEffect(() => { streamPostsRef.current  = streamPosts  }, [streamPosts])
   useEffect(() => { templatesRef.current    = templates    }, [templates])
   useEffect(() => { selectedTmplRef.current = selectedTmpl }, [selectedTmpl])
+
+  // Elapsed timer — counts up while streaming
+  useEffect(() => {
+    if (streamActive) {
+      timerStartRef.current = Date.now()
+      setElapsedMs(0)
+      timerIntervalRef.current = setInterval(() => {
+        setElapsedMs(Date.now() - (timerStartRef.current ?? Date.now()))
+      }, 100)
+    } else {
+      if (timerIntervalRef.current) { clearInterval(timerIntervalRef.current); timerIntervalRef.current = null }
+    }
+    return () => { if (timerIntervalRef.current) clearInterval(timerIntervalRef.current) }
+  }, [streamActive])
 
   // Sync when profile changes
   useEffect(() => {
@@ -685,6 +701,7 @@ export default function Forge({ onSendToStudio, onBatchToStudio, generatedImages
             sentToStudio={sentToStudio}
             exportStatus={exportStatus}
             streamActive={streamActive}
+            elapsedMs={elapsedMs}
             completedCount={completedCount}
             errorCount={errorCount}
             generatedImages={generatedImages}
@@ -715,7 +732,6 @@ export default function Forge({ onSendToStudio, onBatchToStudio, generatedImages
         />
       )}
 
-      <ForgeTimer streamActive={streamActive} />
     </PageShell>
   )
 }
