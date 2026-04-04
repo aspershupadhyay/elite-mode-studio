@@ -4,7 +4,7 @@ interface ForgeTimerProps {
   streamActive: boolean
 }
 
-export default function ForgeTimer({ streamActive }: ForgeTimerProps): React.ReactElement | null {
+export default function ForgeTimer({ streamActive }: ForgeTimerProps): JSX.Element | null {
   const [elapsedMs,  setElapsedMs]  = useState(0)
   const [completed,  setCompleted]  = useState(false)
   const [visible,    setVisible]    = useState(false)
