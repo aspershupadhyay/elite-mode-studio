@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700;800&display=swap');
+@import './assets/fonts.css';
 
 @tailwind base;
 @tailwind components;
@@ -16,9 +16,12 @@ html {
 }
 body {
   position: fixed; inset: 0; width: 100%; height: 100%; overflow: hidden;
-  font-family: 'JetBrains Mono', 'Inter', monospace;
-  background: var(--bg);
-  color: var(--text);
+  font-family: 'Inter Variable', 'Inter', system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+  line-height: 1.6;
+  letter-spacing: -0.011em;
+  background: var(--surface-0);
+  color: var(--text-primary);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   user-select: none;
@@ -31,55 +34,150 @@ body {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   CSS CUSTOM PROPERTIES  (the single source of truth for theming)
-   All colours — including Tailwind override classes below — derive
-   from these vars.  Appearance settings mutate only these vars.
+   DESIGN TOKENS  ─  single source of truth for theming
+   All colours, spacing, radii, and easing derive from here.
+   Appearance settings mutate only --green / --green-rgb.
    ═══════════════════════════════════════════════════════════════════ */
 :root {
-  /* Backgrounds */
-  --bg:           #0D0D0D;
-  --bg2:          #141414;
-  --bg3:          #1A1A1A;
-  --border:       #2A2A2A;
+  /* ── Surface scale (darkest → lighter) ──────────────────────────── */
+  --surface-0:  #050505;   /* window bg, deepest layer */
+  --surface-1:  #0C0C0C;   /* sidebar, nav panels */
+  --surface-2:  #111111;   /* cards, input backgrounds */
+  --surface-3:  #181818;   /* hover states, secondary panels */
+  --surface-4:  #202020;   /* pressed, dropdowns */
 
-  /* Accent (default: EliteMode green) */
-  --green:        #0BDA76;
-  --green-rgb:    11, 218, 118;      /* RGB triplet — used for rgba() opacity variants */
-  --green-dim:    rgba(11,218,118,0.08);
-  --green-border: rgba(11,218,118,0.25);
+  /* ── Legacy bg aliases (backward compat — used in Fabric/Tailwind) */
+  --bg:    var(--surface-1);
+  --bg2:   var(--surface-2);
+  --bg3:   var(--surface-3);
 
-  /* Text scale */
-  --text:         #F0F0F0;
-  --text2:        #888;
-  --text3:        #555;
+  /* ── Border scale ───────────────────────────────────────────────── */
+  --border-subtle:  rgba(255,255,255,0.055);
+  --border-default: rgba(255,255,255,0.088);
+  --border-strong:  rgba(255,255,255,0.15);
+  --border:   var(--border-default);   /* legacy alias */
 
-  /* Status */
-  --red:          #FF4D4D;
-  --amber:        #F5A623;
+  /* ── Accent (user-swappable; AppearanceTab mutates --green) ──────── */
+  --green:        #c8ff00;
+  --green-rgb:    200, 255, 0;
+  --green-dim:    rgba(200,255,0,0.08);
+  --green-border: rgba(200,255,0,0.22);
+  /* Semantic aliases — new code uses these */
+  --accent:        var(--green);
+  --accent-rgb:    var(--green-rgb);
+  --accent-dim:    var(--green-dim);
+  --accent-border: var(--green-border);
+  /* Foreground on solid accent fill — always dark for readability */
+  --accent-fg:     #000;
 
-  /* Fonts */
-  --font-mono:    'JetBrains Mono', monospace;
+  /* ── Text scale ─────────────────────────────────────────────────── */
+  --text-primary:   #F0F0F0;
+  --text-secondary: #9A9A9A;
+  --text-tertiary:  #565656;
+  --text-inverse:   #050505;
+  /* Legacy aliases */
+  --text:   var(--text-primary);
+  --text2:  var(--text-secondary);
+  --text3:  var(--text-tertiary);
+
+  /* ── Status ─────────────────────────────────────────────────────── */
+  --status-red:   #EF4444;
+  --status-amber: #F59E0B;
+  --status-green: var(--green);
+  --red:   var(--status-red);
+  --amber: var(--status-amber);
+
+  /* ── Spacing (8-point grid) ─────────────────────────────────────── */
+  --space-1: 4px;  --space-2: 8px;  --space-3: 12px; --space-4: 16px;
+  --space-5: 20px; --space-6: 24px; --space-8: 32px;
+
+  /* ── Border radius ──────────────────────────────────────────────── */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+
+  /* ── Easing ─────────────────────────────────────────────────────── */
+  --ease-fast: 100ms cubic-bezier(0.16,1,0.3,1);
+  --ease-base: 160ms cubic-bezier(0.16,1,0.3,1);
+  --ease-slow: 280ms cubic-bezier(0.16,1,0.3,1);
+
+  /* ── Fonts ──────────────────────────────────────────────────────── */
+  --font-ui:   'Inter Variable', 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   SCROLLBAR  (thin, theme-aware)
+   SCROLLBAR  — near-invisible, premium feel
    ═══════════════════════════════════════════════════════════════════ */
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
-::-webkit-scrollbar-thumb:hover { background: #444; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.18); }
+
+/* ── Studio panel utilities ─────────────────────────────────────── */
+.studio-panel {
+  background: rgba(var(--elite-900-rgb, 17,17,17), 0.85);
+  backdrop-filter: blur(20px) saturate(1.2);
+  -webkit-backdrop-filter: blur(20px) saturate(1.2);
+}
+
+/* Premium button press micro-interaction */
+.btn-press:active { transform: scale(0.97); }
+
+/* Tooltip */
+[data-tooltip] {
+  position: relative;
+}
+[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%) scale(0.95);
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: #1a1a1a;
+  border: 1px solid rgba(255,255,255,0.08);
+  color: #ccc;
+  font-size: 10px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  z-index: 50;
+}
+[data-tooltip]:hover::after {
+  opacity: 1;
+  transform: translateX(-50%) scale(1);
+  transition-delay: 0.4s;
+}
 
 /* ═══════════════════════════════════════════════════════════════════
    BASE ELEMENT RESETS
    ═══════════════════════════════════════════════════════════════════ */
-button { cursor: pointer; font-family: inherit; }
-input, textarea, select { font-family: inherit; }
-a { color: var(--green); text-decoration: none; }
+button { cursor: pointer; font-family: var(--font-ui); }
+input, textarea, select { font-family: var(--font-ui); }
+a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
 input, textarea { user-select: text !important; }
 
+/* ── Premium focus ring ─────────────────────────────────────────── */
+:focus-visible {
+  outline: 1.5px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* ── Frosted glass utility ──────────────────────────────────────── */
+.glass {
+  background: rgba(255,255,255,0.03);
+  backdrop-filter: blur(12px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
+}
+
 /* ═══════════════════════════════════════════════════════════════════
-   FABRIC.JS TEXTAREA  —  prevent its injection from causing reflow
+   FABRIC.JS TEXTAREA  —  prevent injection from causing reflow
    ═══════════════════════════════════════════════════════════════════ */
 canvas + textarea,
 .canvas-container textarea,
@@ -100,24 +198,18 @@ canvas + textarea,
 
 /* ═══════════════════════════════════════════════════════════════════
    TAILWIND ↔ CSS-VAR BRIDGE
-   ─────────────────────────────────────────────────────────────────
-   Tailwind generates static classes from tailwind.config.js.
-   These overrides replace those static values with live CSS vars,
-   so Appearance settings (which mutate the vars) propagate into
-   every Design Studio component that uses Tailwind utility classes.
-
-   ACCENT  ─ uses --green and --green-rgb
-   ELITE   ─ uses --bg, --bg2, --bg3, --border (background scale)
-   WARM    ─ uses --text, --text2, --text3 (text scale)
+   Tailwind generates static classes from tailwind.config.
+   These overrides make those classes use live CSS vars so
+   Appearance settings propagate into Design Studio Tailwind classes.
    ═══════════════════════════════════════════════════════════════════ */
 
 /* ── Accent: solid ───────────────────────────────────────────────── */
-.text-accent    { color:         var(--green) !important; }
-.border-accent  { border-color:  var(--green) !important; }
-.accent-accent  { accent-color:  var(--green); }
-.bg-accent      { background-color: var(--green) !important; }
+.text-accent    { color:            var(--green) !important; }
+.border-accent  { border-color:     var(--green) !important; }
+.accent-accent  { accent-color:     var(--green); }
+.bg-accent      { background-color: var(--green) !important; color: var(--accent-fg) !important; }
 
-/* ── Accent: opacity variants (need --green-rgb for rgba()) ─────── */
+/* ── Accent: opacity variants ───────────────────────────────────── */
 .bg-accent\/8  { background-color: rgba(var(--green-rgb), 0.08) !important; }
 .bg-accent\/10 { background-color: rgba(var(--green-rgb), 0.10) !important; }
 .bg-accent\/12 { background-color: rgba(var(--green-rgb), 0.12) !important; }
@@ -129,31 +221,28 @@ canvas + textarea,
 .ring-accent\/50   { --tw-ring-color: rgba(var(--green-rgb), 0.50) !important; }
 
 /* ── Elite background scale ─────────────────────────────────────── */
-.bg-elite-900  { background-color: var(--bg)  !important; }
-.bg-elite-850  { background-color: var(--bg)  !important; }
-.bg-elite-800  { background-color: var(--bg2) !important; }
-.bg-elite-700  { background-color: var(--bg3) !important; }
+.bg-elite-900  { background-color: var(--surface-0) !important; }
+.bg-elite-850  { background-color: var(--surface-1) !important; }
+.bg-elite-800  { background-color: var(--surface-2) !important; }
+.bg-elite-700  { background-color: var(--surface-3) !important; }
 
-/* Opacity variants — approximate with static transparency.
-   These use the default dark values since CSS var() + opacity
-   shorthand requires color-mix() which isn't in older Electron. */
-.bg-elite-900\/90 { background-color: rgba(13,13,13,0.90) !important; }
-.bg-elite-900\/50 { background-color: rgba(13,13,13,0.50) !important; }
-.bg-elite-800\/60 { background-color: rgba(20,20,20,0.60) !important; }
-.bg-elite-800\/95 { background-color: rgba(20,20,20,0.95) !important; }
-.bg-elite-700\/60 { background-color: rgba(26,26,26,0.60) !important; }
-.bg-elite-700\/80 { background-color: rgba(26,26,26,0.80) !important; }
+.bg-elite-900\/90 { background-color: rgba(5,5,5,0.90)   !important; }
+.bg-elite-900\/50 { background-color: rgba(5,5,5,0.50)   !important; }
+.bg-elite-800\/60 { background-color: rgba(17,17,17,0.60) !important; }
+.bg-elite-800\/95 { background-color: rgba(17,17,17,0.95) !important; }
+.bg-elite-700\/60 { background-color: rgba(24,24,24,0.60) !important; }
+.bg-elite-700\/80 { background-color: rgba(24,24,24,0.80) !important; }
 
 /* ── Elite border scale ─────────────────────────────────────────── */
-.border-elite-600\/25 { border-color: rgba(42,42,42,0.25) !important; }
-.border-elite-600\/30 { border-color: rgba(42,42,42,0.30) !important; }
-.border-elite-600\/40 { border-color: rgba(42,42,42,0.40) !important; }
-.border-elite-600\/50 { border-color: rgba(42,42,42,0.50) !important; }
+.border-elite-600\/25 { border-color: rgba(255,255,255,0.055) !important; }
+.border-elite-600\/30 { border-color: rgba(255,255,255,0.088) !important; }
+.border-elite-600\/40 { border-color: rgba(255,255,255,0.12)  !important; }
+.border-elite-600\/50 { border-color: rgba(255,255,255,0.15)  !important; }
 
 /* ── Text scale ─────────────────────────────────────────────────── */
-.text-warm       { color: var(--text)  !important; }
-.text-warm-muted { color: var(--text2) !important; }
-.text-warm-faint { color: var(--text3) !important; }
+.text-warm       { color: var(--text-primary)   !important; }
+.text-warm-muted { color: var(--text-secondary) !important; }
+.text-warm-faint { color: var(--text-tertiary)  !important; }
 
 /* ── Shadow (accent-aware) ──────────────────────────────────────── */
 .shadow-accent\/5 {
@@ -168,11 +257,106 @@ canvas + textarea,
 @keyframes pulse          { 0%,100%{ opacity:1 }               50%{ opacity:.2 } }
 @keyframes cursor-blink   { 0%,100%{ opacity:1 }               50%{ opacity:0  } }
 @keyframes skeleton-shimmer {
-  0%   { background: var(--bg3); }
-  50%  { background: color-mix(in srgb, var(--bg3) 60%, var(--border) 40%); }
-  100% { background: var(--bg3); }
+  0%   { background: var(--surface-3); }
+  50%  { background: var(--surface-4); }
+  100% { background: var(--surface-3); }
 }
 @keyframes slideUp {
   from { transform: translateX(-50%) translateY(10px); opacity: 0 }
   to   { transform: translateX(-50%) translateY(0);    opacity: 1 }
+}
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.97); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+/* ── Universal dropdown panel ────────────────────────────────────── */
+@keyframes dropdown-enter {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0);    }
+}
+.dropdown-panel {
+  background: var(--surface-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  box-shadow: 0 20px 60px rgba(0,0,0,0.8), 0 4px 16px rgba(0,0,0,0.5);
+  transform-origin: top center;
+  animation: dropdown-enter 0.15s ease-out forwards;
+  color: var(--text-primary);
+}
+
+/* ── Sidebar nav item left-bar active indicator ──────────────────── */
+.nav-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 0 14px;
+  height: 34px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  transition: background var(--ease-fast), color var(--ease-fast);
+  text-align: left;
+  white-space: nowrap;
+}
+.nav-item::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 20%;
+  height: 60%;
+  width: 2px;
+  background: var(--accent);
+  border-radius: 0 2px 2px 0;
+  opacity: 0;
+  transition: opacity var(--ease-fast);
+}
+.nav-item:hover {
+  background: rgba(255,255,255,0.035);
+  color: var(--text-secondary);
+}
+.nav-item.active {
+  background: rgba(255,255,255,0.045);
+  color: var(--text-primary);
+  font-weight: 500;
+}
+.nav-item.active::before { opacity: 1; }
+.nav-item .nav-icon { flex-shrink: 0; opacity: 0.6; transition: opacity var(--ease-fast); }
+.nav-item:hover .nav-icon,
+.nav-item.active .nav-icon { opacity: 1; }
+
+/* ── Nav section label ───────────────────────────────────────────── */
+.nav-section-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  padding: 16px 16px 4px;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* ── Premium input focus glow ────────────────────────────────────── */
+.input-focused {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 3px var(--accent-dim) !important;
+}
+
+/* ── Image gen status pulse animation ─────────────────────────── */
+@keyframes elite-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.25; }
 }
