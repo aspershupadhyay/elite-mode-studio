@@ -1,0 +1,130 @@
+name: Release — All Platforms
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  # ── macOS ────────────────────────────────────────────────────────────────
+  release-mac:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python deps + PyInstaller
+        working-directory: backend
+        run: |
+          pip install pyinstaller
+          pip install -r requirements.txt
+
+      - name: Build backend binary
+        working-directory: backend
+        run: pyinstaller backend.spec
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Package DMG
+        run: npx electron-builder --mac --publish never
+
+      - name: Upload DMG to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*.dmg
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  # ── Windows ──────────────────────────────────────────────────────────────
+  release-win:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python deps + PyInstaller
+        working-directory: backend
+        run: |
+          pip install pyinstaller
+          pip install -r requirements.txt
+
+      - name: Build backend binary
+        working-directory: backend
+        run: pyinstaller backend.spec
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Package NSIS installer
+        run: npx electron-builder --win --publish never
+
+      - name: Upload EXE to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*.exe
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  # ── Linux ─────────────────────────────────────────────────────────────────
+  release-linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install system libs for faiss / pillow / numpy
+        run: sudo apt-get install -y libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1
+
+      - name: Install Python deps + PyInstaller
+        working-directory: backend
+        run: |
+          pip install pyinstaller
+          pip install -r requirements.txt
+
+      - name: Build backend binary
+        working-directory: backend
+        run: pyinstaller backend.spec
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Package AppImage
+        run: npx electron-builder --linux --publish never
+
+      - name: Upload AppImage to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*.AppImage
+          token: ${{ secrets.GITHUB_TOKEN }}
