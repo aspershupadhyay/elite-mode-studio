@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0E0E22"/>
+      <stop offset="100%" stop-color="#08081A"/>
+    </linearGradient>
+    <linearGradient id="arc" x1="290" y1="290" x2="750" y2="750" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#818CF8"/>
+      <stop offset="50%" stop-color="#A855F7"/>
+      <stop offset="100%" stop-color="#EC4899"/>
+    </linearGradient>
+    <radialGradient id="bgGlow" cx="45%" cy="40%" r="55%">
+      <stop offset="0%" stop-color="#4F46E5" stop-opacity="0.14"/>
+      <stop offset="100%" stop-color="#4F46E5" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="20" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <rect width="1024" height="1024" rx="226" fill="url(#bg)"/>
+  <rect width="1024" height="1024" rx="226" fill="url(#bgGlow)"/>
+  <path d="M 652,332 A 228,228 0 1,0 652,692"
+        fill="none"
+        stroke="url(#arc)"
+        stroke-width="96"
+        stroke-linecap="round"
+        filter="url(#glow)"/>
+</svg>

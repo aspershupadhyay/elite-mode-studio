@@ -12,7 +12,8 @@
     "electron": "npm run build:electron && electron .",
     "start": "npm run build:electron && vite build && electron .",
     "dist": "npm run build && electron-builder --mac dmg",
-    "dist:dir": "npm run build && electron-builder --mac dir"
+    "dist:dir": "npm run build && electron-builder --mac dir",
+    "generate-icons": "node scripts/generate-icons.js"
   },
   "build": {
     "appId": "com.creatoros.app",
@@ -188,7 +189,9 @@
     "electron": "^29.4.6",
     "electron-builder": "^26.8.1",
     "postcss": "^8.4.35",
+    "sharp": "^0.34.5",
     "tailwindcss": "^3.4.1",
+    "to-ico": "^1.1.5",
     "typescript": "^5.9.3",
     "vite": "^5.1.4",
     "wait-on": "^7.2.0"
