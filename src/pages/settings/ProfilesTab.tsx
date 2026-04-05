@@ -53,13 +53,13 @@ function genFieldId(): string {
 
 // ── Shared input style helpers ─────────────────────────────────────────────────
 
-function inp(disabled: boolean): React.CSSProperties {
+function inp(_disabled?: boolean): React.CSSProperties {
   return {
     width: '100%', boxSizing: 'border-box', fontSize: 13, padding: '8px 12px',
-    background: disabled ? T.bg3 : T.bg,
+    background: T.bg,
     border: `1px solid ${T.border}`, borderRadius: 8,
-    color: disabled ? T.text3 : T.text,
-    cursor: disabled ? 'not-allowed' : 'text',
+    color: T.text,
+    cursor: 'text',
     outline: 'none',
   }
 }
@@ -98,13 +98,12 @@ function FieldRow({
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 12px', background: T.bg2 }}>
         {/* Toggle */}
         <button
-          onClick={() => !isPreset && onChange({ ...field, enabled: !field.enabled })}
-          disabled={isPreset}
+          onClick={() => onChange({ ...field, enabled: !field.enabled })}
           style={{
             width: 30, height: 17, borderRadius: 9, border: 'none', flexShrink: 0,
             background: field.enabled ? T.accent : T.bg4,
             position: 'relative', transition: 'background .15s',
-            cursor: isPreset ? 'not-allowed' : 'pointer',
+            cursor: 'pointer',
           }}
         >
           <div style={{
@@ -114,27 +113,27 @@ function FieldRow({
         </button>
         {/* ID */}
         <input
-          value={field.id} disabled={isPreset}
+          value={field.id}
           onChange={e => onChange({ ...field, id: e.target.value.replace(/\s+/g, '_').toLowerCase() })}
           placeholder="field_id"
           style={{ width: 110, fontSize: 11, fontFamily: 'monospace', padding: '4px 7px',
-            background: isPreset ? T.bg3 : T.bg, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text }}
+            background: T.bg, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text }}
         />
         {/* Label */}
         <input
-          value={field.label} disabled={isPreset}
+          value={field.label}
           onChange={e => onChange({ ...field, label: e.target.value })}
           placeholder="Label"
           style={{ flex: 1, fontSize: 12, padding: '4px 7px',
-            background: isPreset ? T.bg3 : T.bg, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text }}
+            background: T.bg, border: `1px solid ${T.border}`, borderRadius: 6, color: T.text }}
         />
         {/* Type */}
         <select
-          value={field.type} disabled={isPreset}
+          value={field.type}
           onChange={e => onChange({ ...field, type: e.target.value as FieldType })}
-          style={{ fontSize: 11, padding: '4px 7px', background: isPreset ? T.bg3 : T.bg,
+          style={{ fontSize: 11, padding: '4px 7px', background: T.bg,
             border: `1px solid ${T.border}`, borderRadius: 6, color: T.text2,
-            cursor: isPreset ? 'not-allowed' : 'pointer' }}
+            cursor: 'pointer' }}
         >
           {FIELD_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
         </select>
@@ -155,30 +154,30 @@ function FieldRow({
           <div>
             <p style={{ fontSize: 10, color: T.text3, marginBottom: 4 }}>AI Hint — sent to AI for this field</p>
             <textarea
-              value={field.aiHint} disabled={isPreset}
+              value={field.aiHint}
               onChange={e => onChange({ ...field, aiHint: e.target.value })}
               placeholder="e.g. ALL CAPS headline, 60–110 characters..."
               rows={2}
               style={{ width: '100%', fontSize: 11, padding: '6px 8px', resize: 'vertical',
-                background: isPreset ? T.bg2 : T.bg, border: `1px solid ${T.border}`,
+                background: T.bg, border: `1px solid ${T.border}`,
                 borderRadius: 6, color: T.text, boxSizing: 'border-box' }}
             />
           </div>
           <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: T.text2, cursor: 'pointer' }}>
-              <input type="checkbox" checked={field.required} disabled={isPreset}
+              <input type="checkbox" checked={field.required}
                 onChange={e => onChange({ ...field, required: e.target.checked })} />
               Required
             </label>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <span style={{ fontSize: 11, color: T.text3 }}>Max length</span>
               <input
-                type="number" min={0} disabled={isPreset}
+                type="number" min={0}
                 value={field.maxLength ?? ''}
                 onChange={e => onChange({ ...field, maxLength: e.target.value ? Number(e.target.value) : undefined })}
                 placeholder="—"
                 style={{ width: 72, fontSize: 11, padding: '4px 7px',
-                  background: isPreset ? T.bg2 : T.bg, border: `1px solid ${T.border}`, borderRadius: 5, color: T.text }}
+                  background: T.bg, border: `1px solid ${T.border}`, borderRadius: 5, color: T.text }}
               />
             </div>
           </div>
@@ -264,7 +263,6 @@ function ProfileEditor({
   }, [])
 
   function patch(partial: Partial<Profile>): void {
-    if (isPreset) return
     setDraft(d => {
       const updated = { ...d, ...partial }
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
@@ -301,7 +299,7 @@ function ProfileEditor({
       background: `${T.accent}15`, border: `1px solid ${T.accentBd}`,
       fontSize: 11, color: T.text3,
     }}>
-      Built-in preset — read-only. <strong style={{ color: T.text2 }}>Duplicate</strong> it to make a custom copy.
+      Built-in preset — editable but <strong style={{ color: T.text2 }}>non-deletable</strong>. Your changes are saved as overrides.
     </div>
   ) : null
 
@@ -311,16 +309,16 @@ function ProfileEditor({
       {presetBanner}
       <div>
         {label('Profile Name')}
-        <input value={draft.name} disabled={isPreset}
+        <input value={draft.name}
           onChange={e => patch({ name: e.target.value })}
-          style={{ ...inp(isPreset), fontSize: 15, fontWeight: 600 }} />
+          style={{ ...inp(), fontSize: 15, fontWeight: 600 }} />
       </div>
       <div>
         {label('Description')}
-        <input value={draft.description} disabled={isPreset}
+        <input value={draft.description}
           onChange={e => patch({ description: e.target.value })}
           placeholder="Short description of this profile's use case"
-          style={inp(isPreset)} />
+          style={inp()} />
       </div>
       <div style={{ display: 'flex', gap: 10, paddingTop: 4 }}>
         {isActive ? (
@@ -336,11 +334,9 @@ function ProfileEditor({
             Set as Active Profile
           </button>
         )}
-        {!isPreset && (
-          <span style={{ fontSize: 10, color: T.text3, display: 'flex', alignItems: 'center', marginLeft: 4 }}>
-            auto-saves
-          </span>
-        )}
+        <span style={{ fontSize: 10, color: T.text3, display: 'flex', alignItems: 'center', marginLeft: 4 }}>
+          auto-saves
+        </span>
       </div>
     </div>
   )
@@ -359,31 +355,31 @@ function ProfileEditor({
         {/* Tone */}
         <div>
           <p style={{ fontSize: 10, color: T.text3, marginBottom: 5, fontWeight: 500 }}>Writing Style</p>
-          <input value={draft.tone} disabled={isPreset}
+          <input value={draft.tone}
             onChange={e => patch({ tone: e.target.value })}
             placeholder="e.g. analytical, casual..."
             style={{ width: '100%', boxSizing: 'border-box', fontSize: 12, padding: '7px 10px',
-              background: isPreset ? T.bg3 : T.bg, border: `1px solid ${T.border}`,
+              background: T.bg, border: `1px solid ${T.border}`,
               borderRadius: 7, color: T.text, outline: 'none' }} />
         </div>
         {/* Language */}
         <div>
           <p style={{ fontSize: 10, color: T.text3, marginBottom: 5, fontWeight: 500 }}>Language</p>
-          <select value={draft.language} disabled={isPreset}
+          <select value={draft.language}
             onChange={e => patch({ language: e.target.value })}
             style={{ width: '100%', boxSizing: 'border-box', fontSize: 12, padding: '7px 10px',
-              background: isPreset ? T.bg3 : T.bg, border: `1px solid ${T.border}`,
-              borderRadius: 7, color: T.text, cursor: isPreset ? 'not-allowed' : 'pointer' }}>
+              background: T.bg, border: `1px solid ${T.border}`,
+              borderRadius: 7, color: T.text, cursor: 'pointer' }}>
             {LANGUAGE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
         </div>
         {/* Posts per run */}
         <div>
           <p style={{ fontSize: 10, color: T.text3, marginBottom: 5, fontWeight: 500 }}>Posts per Run</p>
-          <input type="number" min={1} max={20} value={draft.postCount} disabled={isPreset}
+          <input type="number" min={1} max={20} value={draft.postCount}
             onChange={e => patch({ postCount: Math.max(1, Number(e.target.value)) })}
             style={{ width: '100%', boxSizing: 'border-box', fontSize: 12, padding: '7px 10px',
-              background: isPreset ? T.bg3 : T.bg, border: `1px solid ${T.border}`,
+              background: T.bg, border: `1px solid ${T.border}`,
               borderRadius: 7, color: T.text, outline: 'none' }} />
         </div>
         {/* Web Search + Freshness combined */}
@@ -395,35 +391,35 @@ function ProfileEditor({
             </span>
           </p>
           <div style={{ display: 'flex', gap: 6 }}>
-            <button disabled={isPreset}
+            <button
               onClick={() => patch({ searchEnabled: !draft.searchEnabled })}
               style={{
                 width: 36, height: 20, borderRadius: 10, border: 'none', flexShrink: 0,
                 background: draft.searchEnabled ? T.accent : T.bg4,
                 position: 'relative', transition: 'background .15s',
-                cursor: isPreset ? 'not-allowed' : 'pointer',
+                cursor: 'pointer',
               }}>
               <div style={{
                 position: 'absolute', top: 3, left: draft.searchEnabled ? 18 : 3,
                 width: 14, height: 14, borderRadius: '50%', background: '#fff', transition: 'left .15s',
               }} />
             </button>
-            <select value={draft.searchFreshness} disabled={isPreset || !draft.searchEnabled}
+            <select value={draft.searchFreshness} disabled={!draft.searchEnabled}
               onChange={e => patch({ searchFreshness: e.target.value })}
               style={{ flex: 1, fontSize: 11, padding: '4px 6px',
-                background: isPreset || !draft.searchEnabled ? T.bg3 : T.bg,
+                background: !draft.searchEnabled ? T.bg3 : T.bg,
                 border: `1px solid ${T.border}`, borderRadius: 7,
                 color: draft.searchEnabled ? T.text : T.text3,
-                cursor: isPreset ? 'not-allowed' : 'pointer', opacity: draft.searchEnabled ? 1 : 0.5 }}>
+                cursor: 'pointer', opacity: draft.searchEnabled ? 1 : 0.5 }}>
               {FRESHNESS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
-            <select value={draft.searchMode ?? 'news'} disabled={isPreset || !draft.searchEnabled}
+            <select value={draft.searchMode ?? 'news'} disabled={!draft.searchEnabled}
               onChange={e => patch({ searchMode: e.target.value })}
               style={{ flex: 1, fontSize: 11, padding: '4px 6px',
-                background: isPreset || !draft.searchEnabled ? T.bg3 : T.bg,
+                background: !draft.searchEnabled ? T.bg3 : T.bg,
                 border: `1px solid ${T.border}`, borderRadius: 7,
                 color: draft.searchEnabled ? T.text : T.text3,
-                cursor: isPreset ? 'not-allowed' : 'pointer', opacity: draft.searchEnabled ? 1 : 0.5 }}>
+                cursor: 'pointer', opacity: draft.searchEnabled ? 1 : 0.5 }}>
               <option value="news">News search</option>
               <option value="general">General web</option>
             </select>
@@ -449,15 +445,15 @@ function ProfileEditor({
           </span>
         </div>
         <textarea
-          value={draft.systemPrompt} disabled={isPreset}
+          value={draft.systemPrompt}
           onChange={e => patch({ systemPrompt: e.target.value })}
           rows={10}
           placeholder={`Example:\nYou are an expert financial analyst writing for a sophisticated audience.\n- Be precise and cite specific numbers\n- Use named sources, not vague references\n- Keep tone analytical but accessible`}
           style={{
             width: '100%', boxSizing: 'border-box', fontSize: 12, fontFamily: 'monospace',
             padding: '12px 14px', resize: 'vertical', lineHeight: 1.7,
-            background: isPreset ? T.bg3 : T.bg2, border: `1px solid ${T.border}`,
-            borderRadius: 10, color: isPreset ? T.text3 : T.text, outline: 'none',
+            background: T.bg2, border: `1px solid ${T.border}`,
+            borderRadius: 10, color: T.text, outline: 'none',
           }}
         />
       </div>
@@ -476,15 +472,15 @@ function ProfileEditor({
           </p>
         </div>
         <textarea
-          value={draft.customInstructions} disabled={isPreset}
+          value={draft.customInstructions}
           onChange={e => patch({ customInstructions: e.target.value })}
           rows={3}
           placeholder="e.g. always end with a question to drive engagement..."
           style={{
             width: '100%', boxSizing: 'border-box', fontSize: 12, padding: '10px 14px',
             resize: 'vertical', lineHeight: 1.6,
-            background: isPreset ? T.bg3 : T.bg2, border: `1px solid ${T.border}`,
-            borderRadius: 10, color: isPreset ? T.text3 : T.text, outline: 'none',
+            background: T.bg2, border: `1px solid ${T.border}`,
+            borderRadius: 10, color: T.text, outline: 'none',
           }}
         />
       </div>
@@ -507,10 +503,10 @@ function ProfileEditor({
           ] as const).map(p => {
             const active = draft.titleMinLength === p.min && draft.titleMaxLength === p.max
             return (
-              <button key={p.label} disabled={isPreset}
+              <button key={p.label}
                 onClick={() => patch({ titleMinLength: p.min, titleMaxLength: p.max })}
                 style={{
-                  flex: 1, padding: '7px 0', borderRadius: 7, cursor: isPreset ? 'not-allowed' : 'pointer',
+                  flex: 1, padding: '7px 0', borderRadius: 7, cursor: 'pointer',
                   border: `1px solid ${active ? T.violet : T.border2}`,
                   background: active ? T.violetBg : T.bg,
                   color: active ? T.violetL : T.text2, fontSize: 11,
@@ -524,9 +520,9 @@ function ProfileEditor({
         <div style={{ display: 'flex', gap: 16 }}>
           <div style={{ flex: 1 }}>
             <p style={{ fontSize: 10, color: T.text3, marginBottom: 6, fontWeight: 500 }}>Min characters</p>
-            <input type="range" min={30} max={100} value={draft.titleMinLength} disabled={isPreset}
+            <input type="range" min={30} max={100} value={draft.titleMinLength}
               onChange={e => patch({ titleMinLength: Number(e.target.value) })}
-              style={{ width: '100%', accentColor: T.violet, cursor: isPreset ? 'not-allowed' : 'pointer' }} />
+              style={{ width: '100%', accentColor: T.violet, cursor: 'pointer' }} />
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: T.text3, marginTop: 3 }}>
               <span>30</span>
               <span style={{ color: T.violetL, fontWeight: 700, fontFamily: 'monospace' }}>{draft.titleMinLength}</span>
@@ -535,9 +531,9 @@ function ProfileEditor({
           </div>
           <div style={{ flex: 1 }}>
             <p style={{ fontSize: 10, color: T.text3, marginBottom: 6, fontWeight: 500 }}>Max characters</p>
-            <input type="range" min={70} max={160} value={draft.titleMaxLength} disabled={isPreset}
+            <input type="range" min={70} max={160} value={draft.titleMaxLength}
               onChange={e => patch({ titleMaxLength: Number(e.target.value) })}
-              style={{ width: '100%', accentColor: T.violet, cursor: isPreset ? 'not-allowed' : 'pointer' }} />
+              style={{ width: '100%', accentColor: T.violet, cursor: 'pointer' }} />
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: T.text3, marginTop: 3 }}>
               <span>70</span>
               <span style={{ color: T.violetL, fontWeight: 700, fontFamily: 'monospace' }}>{draft.titleMaxLength}</span>
@@ -619,18 +615,16 @@ function ProfileEditor({
           isPreset={isPreset}
           onChange={updated => saveField(i, updated)}
           onDelete={() => deleteField(i)}
-          canDelete={!isPreset && draft.outputFields.length > 1}
+          canDelete={draft.outputFields.length > 1}
         />
       ))}
-      {!isPreset && (
-        <button onClick={addField} style={{
-          width: '100%', padding: '10px', borderRadius: 8, marginTop: 4,
-          border: `1px dashed ${T.border}`, background: 'transparent',
-          color: T.text3, fontSize: 12, cursor: 'pointer',
-        }}>
-          + Add Field
-        </button>
-      )}
+      <button onClick={addField} style={{
+        width: '100%', padding: '10px', borderRadius: 8, marginTop: 4,
+        border: `1px dashed ${T.border}`, background: 'transparent',
+        color: T.text3, fontSize: 12, cursor: 'pointer',
+      }}>
+        + Add Field
+      </button>
     </div>
   )
 
@@ -657,15 +651,13 @@ function ProfileEditor({
           onChange={updated => saveSlot(i, updated)}
           onDelete={() => deleteSlot(i)} />
       ))}
-      {!isPreset && (
-        <button onClick={addSlot} style={{
-          width: '100%', padding: '10px', borderRadius: 8, marginTop: 4,
-          border: `1px dashed ${T.border}`, background: 'transparent',
-          color: T.text3, fontSize: 12, cursor: 'pointer',
-        }}>
-          + Add Slot Mapping
-        </button>
-      )}
+      <button onClick={addSlot} style={{
+        width: '100%', padding: '10px', borderRadius: 8, marginTop: 4,
+        border: `1px dashed ${T.border}`, background: 'transparent',
+        color: T.text3, fontSize: 12, cursor: 'pointer',
+      }}>
+        + Add Slot Mapping
+      </button>
     </div>
   )
 
@@ -679,9 +671,9 @@ function ProfileEditor({
       </p>
       <div>
         {label('Template')}
-        <select value={draft.templateId} disabled={isPreset}
+        <select value={draft.templateId}
           onChange={e => patch({ templateId: e.target.value })}
-          style={{ ...inp(isPreset), cursor: isPreset ? 'not-allowed' : 'pointer' }}>
+          style={{ ...inp(), cursor: 'pointer' }}>
           <option value="">— Use active Design Studio template —</option>
           {templates.map(t => (
             <option key={t.id} value={t.id}>{t.name}</option>

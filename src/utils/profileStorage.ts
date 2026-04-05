@@ -19,17 +19,32 @@ import { BUILT_IN_PRESETS, DEFAULT_STUDIO_PREFS } from '../types/profile'
 /** Migrate profiles saved before new fields were added. */
 function migrate(p: Profile): Profile {
   return {
-    titleMinLength: 60,
-    titleMaxLength: 110,
-    studioPrefs:    { ...DEFAULT_STUDIO_PREFS },
-    // searchMode added later — default based on freshness so old profiles behave correctly
-    searchMode:     (p.searchFreshness === 'any') ? 'general' : 'news',
     ...p,
+    titleMinLength: p.titleMinLength ?? 60,
+    titleMaxLength: p.titleMaxLength ?? 110,
+    studioPrefs:    p.studioPrefs ?? { ...DEFAULT_STUDIO_PREFS },
+    // searchMode added later — default based on freshness so old profiles behave correctly
+    searchMode:     p.searchMode ?? ((p.searchFreshness === 'any') ? 'general' : 'news'),
   }
 }
 
 const PROFILES_KEY   = 'elite_profiles'
 const ACTIVE_KEY     = 'elite_active_profile_id'
+const OVERRIDES_KEY  = 'elite_preset_overrides'
+
+function readOverrides(): Record<string, Partial<Profile>> {
+  try {
+    const raw = localStorage.getItem(OVERRIDES_KEY)
+    return raw ? JSON.parse(raw) as Record<string, Partial<Profile>> : {}
+  } catch {
+    return {}
+  }
+}
+
+function writeOverrides(map: Record<string, Partial<Profile>>): void {
+  localStorage.setItem(OVERRIDES_KEY, JSON.stringify(map))
+  window.dispatchEvent(new CustomEvent('profilesChange'))
+}
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
@@ -54,8 +69,10 @@ function writeCustom(list: Profile[]): void {
  * Returns all profiles: built-in presets first, then user-created custom profiles.
  */
 export function getProfiles(): Profile[] {
-  const custom = readCustom()
-  return [...BUILT_IN_PRESETS, ...custom]
+  const overrides = readOverrides()
+  const presets   = BUILT_IN_PRESETS.map(p => ({ ...p, ...overrides[p.id] }))
+  const custom    = readCustom()
+  return [...presets, ...custom]
 }
 
 /**
@@ -63,14 +80,25 @@ export function getProfiles(): Profile[] {
  * Refuses to overwrite built-in presets — call duplicateProfile() first.
  */
 export function saveProfile(profile: Profile): void {
-  if (profile.isPreset) return  // presets are immutable
+  if (profile.isPreset) {
+    // For presets: store only changed fields as an override — never touch BUILT_IN_PRESETS
+    const base = BUILT_IN_PRESETS.find(p => p.id === profile.id)
+    if (!base) return
+    const overrides = readOverrides()
+    const diff: Partial<Profile> = {}
+    for (const key of Object.keys(profile) as (keyof Profile)[]) {
+      if (JSON.stringify(profile[key]) !== JSON.stringify(base[key])) {
+        (diff as Record<string, unknown>)[key] = profile[key]
+      }
+    }
+    overrides[profile.id] = diff
+    writeOverrides(overrides)
+    return
+  }
+  // Custom profile — unchanged behaviour
   const list = readCustom()
   const idx  = list.findIndex(p => p.id === profile.id)
-  if (idx >= 0) {
-    list[idx] = profile
-  } else {
-    list.push(profile)
-  }
+  if (idx >= 0) { list[idx] = profile } else { list.push(profile) }
   writeCustom(list)
 }
 
