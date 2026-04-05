@@ -76,3 +76,7 @@ yarn-error.log*
 # ── Electron packaged apps ────────────────────────────────────────────────────
 out/
 release/
+
+# ── PyInstaller backend binary ─────────────────────────────────────────────────
+backend/dist/
+backend/build/
