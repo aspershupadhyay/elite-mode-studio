@@ -14,9 +14,9 @@ import url from 'url'
 import fs from 'fs'
 import net from 'net'
 import type { SavePngBatchRequest, SavePngBatchResult, SessionData, StartImageGenRequest, StartImageGenResult, ImageGenProgress } from './src/types/ipc'
-import { startQueue, cancelQueue, isBusy } from './electron/image-gen/queue-manager'
-import { destroyChatWindow } from './electron/image-gen/browser-controller'
-import { readImageGenConfig, writeImageGenConfig } from './electron/image-gen/imageGenConfig'
+import { startQueue, cancelQueue, isBusy } from './src/pages/browser/automation/queue-manager'
+import { destroyChatWindow } from './src/pages/browser/automation/browser-controller'
+import { readImageGenConfig, writeImageGenConfig } from './src/pages/browser/automation/imageGenConfig'
 
 const isDev = !app.isPackaged
 
@@ -306,7 +306,7 @@ function openAuthWindow(url: string): void {
     resizable: true, autoHideMenuBar: true, title: 'Sign in',
     webPreferences: {
       nodeIntegration: false, contextIsolation: true, sandbox: false,
-      preload: path.join(__dirname, 'auth-preload.js'),
+      preload: path.join(__dirname, 'electron', 'auth-preload.js'),
       partition: 'persist:ai-browser',
     },
   })
@@ -507,7 +507,7 @@ ipcMain.handle('session-load', (): SessionData | null => {
 })
 
 // ── IPC: browser image download ─────────────────────────────────────────────
-ipcMain.handle('browser-download-image', async (_event: IpcMainInvokeEvent, { url: imageUrl, postId }: { url: string; postId: string }): Promise<{ tmpPath: string; success: boolean }> => {
+ipcMain.handle('browser-download-image', async (_event: IpcMainInvokeEvent, { url: imageUrl, postId }: { url: string; postId: string }): Promise<{ tmpPath: string; success: boolean; sizeKb: number }> => {
   console.log(`[browser-download] FULL URL to download: ${imageUrl}`)
   const os     = await import('os')
   const { session: electronSession } = await import('electron')
@@ -520,40 +520,25 @@ ipcMain.handle('browser-download-image', async (_event: IpcMainInvokeEvent, { ur
   // are included automatically — this is why plain https.get() was failing.
   const aiSession = electronSession.fromPartition('persist:ai-browser')
 
-  // MIN_SIZE_BYTES: real DALL-E images are 300KB+. Blurry CDN previews are ~30-80KB.
-  // We retry until we get a file >= this size.
-  const MIN_SIZE_BYTES = 250_000  // 250KB minimum — rejects blurry previews
-
-  const tryDownload = async (): Promise<{ ok: boolean; sizeKb: number }> => {
-    try {
-      const resp = await aiSession.fetch(imageUrl, {
-        headers: { 'User-Agent': CLEAN_UA, 'Referer': 'https://chatgpt.com/' },
-      })
-      if (!resp.ok) return { ok: false, sizeKb: 0 }
-      const buf = Buffer.from(await resp.arrayBuffer())
-      const sizeKb = Math.round(buf.length / 1024)
-      console.log(`[browser-download] attempt size: ${sizeKb}KB (min: ${MIN_SIZE_BYTES / 1024}KB)`)
-      if (buf.length < MIN_SIZE_BYTES) return { ok: false, sizeKb }
-      fs.writeFileSync(tmpPath, buf)
-      console.log(`[browser-download] saved ${sizeKb}KB → ${path.basename(tmpPath)}`)
-      return { ok: true, sizeKb }
-    } catch (e) {
-      console.error(`[browser-download] fetch error:`, e)
-      return { ok: false, sizeKb: 0 }
+  // Network interceptor only fires this handler when CDN response >= 300KB,
+  // so the URL we receive here IS the full-res image. Download once, no retry loop.
+  try {
+    const resp = await aiSession.fetch(imageUrl, {
+      headers: { 'User-Agent': CLEAN_UA, 'Referer': 'https://chatgpt.com/' },
+    })
+    if (!resp.ok) {
+      console.error(`[browser-download] HTTP ${resp.status} for ${imageUrl.slice(0, 80)}`)
+      return { tmpPath: '', success: false, sizeKb: 0 }
     }
+    const buf    = Buffer.from(await resp.arrayBuffer())
+    const sizeKb = Math.round(buf.length / 1024)
+    console.log(`[browser-download] saved ${sizeKb}KB → ${path.basename(tmpPath)}`)
+    fs.writeFileSync(tmpPath, buf)
+    return { tmpPath, success: true, sizeKb }
+  } catch (e) {
+    console.error(`[browser-download] fetch error:`, e)
+    return { tmpPath: '', success: false, sizeKb: 0 }
   }
-
-  // Retry up to 8x with 5s gap — CDN takes time to encode the full-res version
-  for (let attempt = 0; attempt < 8; attempt++) {
-    if (attempt > 0) {
-      console.log(`[browser-download] retry ${attempt}/8 — waiting 5s for CDN full-res...`)
-      await new Promise(r => setTimeout(r, 5000))
-    }
-    const result = await tryDownload()
-    if (result.ok) return { tmpPath, success: true }
-  }
-  console.error(`[browser-download] all retries failed — image never reached ${MIN_SIZE_BYTES / 1024}KB`)
-  return { tmpPath: '', success: false }
 })
 
 // ── IPC: image generation pipeline ────────────────────────────────────────
@@ -580,6 +565,55 @@ ipcMain.handle('image-gen:set-url', (_event: IpcMainInvokeEvent, chatGptUrl: str
   writeImageGenConfig({ chatGptUrl })
 })
 
+// ── IPC: system fonts ────────────────────────────────────────────────────────
+let cachedSystemFonts: string[] | null = null
+
+ipcMain.handle('get-system-fonts', async (): Promise<string[]> => {
+  if (cachedSystemFonts) return cachedSystemFonts
+  try {
+    const { execFile } = await import('child_process')
+    const { promisify } = await import('util')
+    const execFileAsync = promisify(execFile)
+    const platform = process.platform
+    let fonts: string[] = []
+
+    if (platform === 'darwin') {
+      // macOS: use system_profiler to list all font full names
+      const { stdout } = await execFileAsync('system_profiler', ['SPFontsDataType'], { timeout: 15000 })
+      fonts = stdout.split('\n')
+        .filter((l: string) => l.includes('Full Name:'))
+        .map((l: string) => l.replace(/.*Full Name:\s*/, '').trim())
+        .filter(Boolean)
+    } else if (platform === 'linux') {
+      const { stdout } = await execFileAsync('fc-list', [':', 'family'], { timeout: 10000 })
+      fonts = stdout.split('\n').map((f: string) => f.split(',')[0].trim()).filter(Boolean)
+    }
+
+    // Deduplicate and sort
+    cachedSystemFonts = [...new Set(fonts)].sort()
+    return cachedSystemFonts
+  } catch (err) {
+    console.warn('[main] Failed to list system fonts:', err)
+    return []
+  }
+})
+
+// ── Local image reader — converts a local file path to a base64 data URL ──
+// Required because the renderer loads from http://localhost:5173 in dev mode,
+// which blocks direct file:// access via same-origin policy.
+ipcMain.handle('read-local-image', (_event: IpcMainInvokeEvent, filePath: string): string | null => {
+  try {
+    const data = fs.readFileSync(filePath)
+    const ext  = path.extname(filePath).toLowerCase().slice(1)
+    const mime = ext === 'webp' ? 'image/webp'
+               : ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg'
+               : 'image/png'
+    return `data:${mime};base64,${data.toString('base64')}`
+  } catch {
+    return null
+  }
+})
+
 // ── App lifecycle ──────────────────────────────────────────────────────────
 app.whenReady().then(async () => {
   startBackend()
@@ -591,7 +625,7 @@ app.whenReady().then(async () => {
   const aiSession = electronSession.fromPartition('persist:ai-browser')
 
   aiSession.setUserAgent(CLEAN_UA)
-  aiSession.setPreloads([path.join(__dirname, 'webview-preload.js')])
+  aiSession.setPreloads([path.join(__dirname, 'src', 'pages', 'browser', 'automation', 'webview-preload.js')])
 
   aiSession.webRequest.onBeforeSendHeaders({ urls: ['<all_urls>'] }, (details, callback) => {
     const headers = { ...details.requestHeaders }
@@ -600,31 +634,62 @@ app.whenReady().then(async () => {
     callback({ requestHeaders: headers })
   })
 
-  // ── CDN image network interception (Strategy A) ────────────────────────
-  // Mirrors Python's page.on("response") in chatgpt_agent.py.
-  // Arms once on the ai-browser session — fires for every oaiusercontent CDN
-  // response. Sends full-res URLs to renderer BEFORE the DOM img.src updates.
-  // Filtered: image/* content-type only, > 50KB (rejects thumbnails/icons).
-  aiSession.webRequest.onCompleted(
-    { urls: [
-      'https://*.oaiusercontent.com/*',
-      'https://files.oaiusercontent.com/*',
-      'https://chatgpt.com/backend-api/estuary/*',
-    ]},
-    (details) => {
-      if (details.statusCode !== 200) return
-      const ct = (
-        (details.responseHeaders?.['content-type'] ?? details.responseHeaders?.['Content-Type'] ?? [''])[0]
-      ) || ''
-      if (!ct.startsWith('image/')) return
-      const cl = parseInt(
-        (details.responseHeaders?.['content-length'] ?? details.responseHeaders?.['Content-Length'] ?? ['0'])[0] || '0'
-      )
-      if (cl > 0 && cl < 50_000) return  // skip tiny thumbnails/icons
-      console.log(`[cdn-intercept] FULL URL: ${details.url} (${Math.round(cl / 1024)}KB)`)
-      mainWindow?.webContents.send('cdn-image-captured', { url: details.url, sizeBytes: cl })
-    }
-  )
+  // ── CDN image network interception — DISABLED ──────────────────────────
+  // Old approach: intercept oaiusercontent/estuary CDN responses by size threshold.
+  // Problem: content-length headers unreliable, estuary serves octet-stream not image/*,
+  // and 300KB threshold still lets blurry chunks through on slow CDNs.
+  // Replaced by: will-download interception (see below) + hover-click Strategy B.
+  //
+  // aiSession.webRequest.onCompleted(
+  //   { urls: [
+  //     'https://*.oaiusercontent.com/*',
+  //     'https://files.oaiusercontent.com/*',
+  //     'https://chatgpt.com/backend-api/estuary/*',
+  //   ]},
+  //   (details) => {
+  //     if (details.statusCode !== 200) return
+  //     const ct = (details.responseHeaders?.['content-type'] ?? details.responseHeaders?.['Content-Type'] ?? [''])[0] || ''
+  //     const isImage   = ct.startsWith('image/')
+  //     const isEstuary = details.url.includes('estuary')
+  //     const isBinary  = ct.includes('octet-stream')
+  //     if (!isImage && !isEstuary && !isBinary) return
+  //     const cl = parseInt((details.responseHeaders?.['content-length'] ?? details.responseHeaders?.['Content-Length'] ?? ['0'])[0] || '0')
+  //     if (cl > 0 && cl < 300_000) return
+  //     console.log(`[cdn-intercept] full-res captured: ${details.url.slice(0, 80)} (${Math.round(cl / 1024)}KB)`)
+  //     mainWindow?.webContents.send('cdn-image-captured', { url: details.url, sizeBytes: cl })
+  //   }
+  // )
+
+  // ── Strategy A: will-download interception ─────────────────────────────
+  // When ChatGPT's download button is clicked (real user OR programmatic hover+click),
+  // Electron fires will-download BEFORE the save dialog. We intercept it here:
+  //   1. Set a deterministic tmp path so we control where the file lands
+  //   2. Notify the renderer with the final path once download completes
+  // This is 100% reliable — ChatGPT only triggers the download when the full-res
+  // file is ready. No URL scraping, no size guessing, no CDN timing games.
+  const tmpDownloadDir = path.join(require('os').tmpdir(), 'elite_images')
+  if (!fs.existsSync(tmpDownloadDir)) fs.mkdirSync(tmpDownloadDir, { recursive: true })
+
+  aiSession.on('will-download', (_event, item) => {
+    const ext      = path.extname(item.getFilename()) || '.png'
+    const tmpPath  = path.join(tmpDownloadDir, `will_dl_${Date.now()}${ext}`)
+    item.setSavePath(tmpPath)
+    console.log(`[will-download] intercepted → ${path.basename(tmpPath)} (${Math.round(item.getTotalBytes() / 1024)}KB)`)
+
+    item.on('updated', (_e, state) => {
+      if (state === 'interrupted') console.log('[will-download] interrupted')
+    })
+    item.once('done', (_e, state) => {
+      if (state === 'completed') {
+        const sizeKb = Math.round(fs.statSync(tmpPath).size / 1024)
+        console.log(`[will-download] done — ${sizeKb}KB → ${path.basename(tmpPath)}`)
+        mainWindow?.webContents.send('image-download-ready', { tmpPath, sizeKb })
+      } else {
+        console.log(`[will-download] failed — state: ${state}`)
+        mainWindow?.webContents.send('image-download-ready', { tmpPath: null, sizeKb: 0 })
+      }
+    })
+  })
 
   // Intercept ALL mainFrame navigations to hard-blocked auth domains.
   //

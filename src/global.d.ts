@@ -62,7 +62,7 @@ declare global {
       savePngBatch:         (request: SavePngBatchRequest) => Promise<SavePngBatchResult>
       saveSession:          (data: SessionData) => void
       loadSession:          () => Promise<SessionData | null>
-      downloadBrowserImage: (req: { url: string; postId: string }) => Promise<{ tmpPath: string; success: boolean }>
+      downloadBrowserImage: (req: { url: string; postId: string }) => Promise<{ tmpPath: string; success: boolean; sizeKb: number }>
       // AI browser
       onAuthComplete:  (cb: () => void) => void
       openAuthPopup:   (u: string) => Promise<void>
@@ -74,8 +74,16 @@ declare global {
       onAuthResult: (cb: (event: AuthCompleteEvent) => void) => (() => void)
       authValidate: (token: string) => Promise<AuthValidateResult>
       authLogout:   (token: string) => Promise<{ ok: boolean }>
+      // Read local file as base64 data URL (dev: file:// blocked by SOP)
+      readLocalImage?: (filePath: string) => Promise<string | null>
       // Terminal logging from renderer
       log: (...args: unknown[]) => void
+      // Strategy A: will-download interception — fires after full-res file is saved to tmp
+      onImageDownloadReady: (cb: (data: { tmpPath: string | null; sizeKb: number }) => void) => (() => void)
+      // CDN network interception — DISABLED (replaced by will-download)
+      onCdnImageCaptured?: (cb: (data: { url: string; sizeBytes: number }) => void) => (() => void)
+      // System fonts
+      getSystemFonts:  () => Promise<string[]>
       // Context menu + browser events
       showContextMenu: (params: { x: number; y: number; linkUrl?: string; srcUrl?: string; selectionText?: string; isEditable?: boolean; pageURL?: string }) => Promise<void>
       onBrowserEvent:  (cb: (event: string, data?: unknown) => void) => (() => void)

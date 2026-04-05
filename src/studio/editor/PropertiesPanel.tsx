@@ -4,7 +4,6 @@ import * as fabric from 'fabric'
 import '@/types/fabric-custom'
 import { getActiveProfile, saveProfile } from '@/utils/profileStorage'
 import type { FabricObject, Canvas as FabricCanvas } from 'fabric'
-import { loadGoogleFont } from '../data/fonts'
 import { DropletIcon } from '../icons/Icons'
 import { useToolbarState, useTextStyleStore } from '../text/TextStyleStore'
 import { useShallow } from 'zustand/react/shallow'
@@ -337,12 +336,32 @@ export default function PropertiesPanel({ selectedObject, canvas, canvasRef }: P
         if (cp) cp.set({ rx: rxLocal, ry: ryLocal })
       }
     } else {
-      selectedObject.set(key as keyof FabricObject, value as never)
-      // Global sidebar change (no selection) — clear any per-char span overrides for
-      // this key so the object-level value shows through on every character.
-      const isTextObj = ['itext', 'textbox'].includes(selectedObject.type ?? '')
-      if (isTextObj && TEXT_SPAN_KEYS.has(key)) {
-        clearAllSpanStyleKeys(selectedObject, canvas, [key])
+      // fontFamily needs `, sans-serif` suffix and font-load confirmation
+      if (key === 'fontFamily') {
+        const familyWithFallback = `${value}, sans-serif`
+        selectedObject.set('fontFamily', familyWithFallback)
+        // Clear per-char fontFamily overrides so object-level value applies everywhere
+        const isTextObj = ['itext', 'textbox'].includes(selectedObject.type ?? '')
+        if (isTextObj) {
+          clearAllSpanStyleKeys(selectedObject, canvas, ['fontFamily', 'fontWeight'])
+        }
+        // Ensure font is loaded before rendering (bundled fonts should be instant)
+        const fontFace = `${value}`
+        document.fonts.load(`400 16px "${fontFace}"`).then(() => {
+          ;(selectedObject as FabricObject & { dirty?: boolean }).dirty = true
+          canvas.requestRenderAll()
+        }).catch(() => {
+          // Font may not be loadable via FontFaceSet — render anyway
+          canvas.requestRenderAll()
+        })
+      } else {
+        selectedObject.set(key as keyof FabricObject, value as never)
+        // Global sidebar change (no selection) — clear any per-char span overrides for
+        // this key so the object-level value shows through on every character.
+        const isTextObj = ['itext', 'textbox'].includes(selectedObject.type ?? '')
+        if (isTextObj && TEXT_SPAN_KEYS.has(key)) {
+          clearAllSpanStyleKeys(selectedObject, canvas, [key])
+        }
       }
     }
     ;(selectedObject as FabricObject & { dirty?: boolean }).dirty = true
@@ -353,8 +372,14 @@ export default function PropertiesPanel({ selectedObject, canvas, canvasRef }: P
   const preview = (key: string, value: string): void => {
     if (!selectedObject || !canvas) return
     if (key === 'fill' && typeof selectedObject.fill !== 'string') return
-    if (key === 'fontFamily') { loadGoogleFont(value); selectedObject.set('fontFamily', `${value}, sans-serif`) }
-    else selectedObject.set(key as keyof FabricObject, value as never)
+    if (key === 'fontFamily') {
+      selectedObject.set('fontFamily', `${value}, sans-serif`)
+      // Confirm font is loaded, then re-render
+      document.fonts.load(`400 16px "${value}"`).then(() => {
+        ;(selectedObject as FabricObject & { dirty?: boolean }).dirty = true
+        canvas.requestRenderAll()
+      }).catch(() => canvas.requestRenderAll())
+    } else selectedObject.set(key as keyof FabricObject, value as never)
     ;(selectedObject as FabricObject & { dirty?: boolean }).dirty = true
     canvas.renderAll()
   }

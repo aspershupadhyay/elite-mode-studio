@@ -15,7 +15,7 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.send('session-save', data),
   loadSession: (): Promise<SessionData | null> =>
     ipcRenderer.invoke('session-load'),
-  downloadBrowserImage: (req: { url: string; postId: string }): Promise<{ tmpPath: string; success: boolean }> =>
+  downloadBrowserImage: (req: { url: string; postId: string }): Promise<{ tmpPath: string; success: boolean; sizeKb: number }> =>
     ipcRenderer.invoke('browser-download-image', req),
 
   // ── AI browser helpers ──────────────────────────────────────────────────
@@ -44,6 +44,10 @@ contextBridge.exposeInMainWorld('api', {
   showContextMenu: (params: { x: number; y: number; linkUrl?: string; srcUrl?: string; selectionText?: string; isEditable?: boolean; pageURL?: string }): Promise<void> =>
     ipcRenderer.invoke('browser:context-menu', params),
 
+  // ── System fonts ─────────────────────────────────────────────────────────
+  getSystemFonts: (): Promise<string[]> =>
+    ipcRenderer.invoke('get-system-fonts'),
+
   // ── Image generation pipeline ────────────────────────────────────────────
   startImageGen: (req: StartImageGenRequest): Promise<StartImageGenResult> =>
     ipcRenderer.invoke('image-gen:start', req),
@@ -63,8 +67,28 @@ contextBridge.exposeInMainWorld('api', {
   setImageGenUrl: (url: string): Promise<void> =>
     ipcRenderer.invoke('image-gen:set-url', url),
 
+  // ── Read local file as base64 data URL (dev: file:// blocked by SOP) ───
+  readLocalImage: (filePath: string): Promise<string | null> =>
+    ipcRenderer.invoke('read-local-image', filePath),
+
   // ── Terminal logging from renderer ──────────────────────────────────────
   log: (...args: unknown[]): void => ipcRenderer.send('renderer-log', args),
+
+  // ── CDN image interception — DISABLED (replaced by will-download) ────────
+  // onCdnImageCaptured: (cb: (data: { url: string; sizeBytes: number }) => void): (() => void) => {
+  //   const handler = (_: unknown, data: { url: string; sizeBytes: number }): void => cb(data)
+  //   ipcRenderer.on('cdn-image-captured', handler)
+  //   return () => ipcRenderer.removeListener('cdn-image-captured', handler)
+  // },
+
+  // ── Strategy A: will-download interception ───────────────────────────────
+  // Fires when main process intercepts a download via session.will-download.
+  // Provides the saved tmp file path + size in KB after the file is fully written.
+  onImageDownloadReady: (cb: (data: { tmpPath: string | null; sizeKb: number }) => void): (() => void) => {
+    const handler = (_: unknown, data: { tmpPath: string | null; sizeKb: number }): void => cb(data)
+    ipcRenderer.on('image-download-ready', handler)
+    return () => ipcRenderer.removeListener('image-download-ready', handler)
+  },
 
   onBrowserEvent: (cb: (event: string, data?: unknown) => void): (() => void) => {
     const evts = ['browser:open-new-tab', 'browser:paste', 'browser:reload', 'browser:go-back', 'browser:go-forward']
@@ -81,7 +105,7 @@ contextBridge.exposeInMainWorld('api', {
   savePngBatch:         (request: SavePngBatchRequest) => Promise<SavePngBatchResult>
   saveSession:          (data: SessionData) => void
   loadSession:          () => Promise<SessionData | null>
-  downloadBrowserImage: (req: { url: string; postId: string }) => Promise<{ tmpPath: string; success: boolean }>
+  downloadBrowserImage: (req: { url: string; postId: string }) => Promise<{ tmpPath: string; success: boolean; sizeKb: number }>
   onAuthComplete:       (cb: () => void) => void
   openAuthPopup:        (u: string) => Promise<void>
   openExternal:         (u: string) => Promise<void>
@@ -92,8 +116,10 @@ contextBridge.exposeInMainWorld('api', {
   authValidate:         (token: string) => Promise<AuthValidateResult>
   authLogout:           (token: string) => Promise<{ ok: boolean }>
   showContextMenu:      (params: { x: number; y: number; linkUrl?: string; srcUrl?: string; selectionText?: string; isEditable?: boolean; pageURL?: string }) => Promise<void>
-  log:                  (...args: unknown[]) => void
-  onBrowserEvent:       (cb: (event: string, data?: unknown) => void) => (() => void)
+  readLocalImage:         (filePath: string) => Promise<string | null>
+  log:                    (...args: unknown[]) => void
+  onImageDownloadReady:   (cb: (data: { tmpPath: string | null; sizeKb: number }) => void) => (() => void)
+  onBrowserEvent:         (cb: (event: string, data?: unknown) => void) => (() => void)
   startImageGen:        (req: StartImageGenRequest) => Promise<StartImageGenResult>
   cancelImageGen:       () => Promise<void>
   onImageGenProgress:   (cb: (progress: ImageGenProgress) => void) => (() => void)
