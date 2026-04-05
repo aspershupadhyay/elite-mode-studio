@@ -22,6 +22,7 @@
     "appId": "com.creatoros.app",
     "productName": "CreatorOS",
     "copyright": "Copyright © 2026 Sparsh Upadhyay",
+    "npmRebuild": false,
     "directories": {
       "output": "release"
     },
