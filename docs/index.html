@@ -638,9 +638,18 @@
     </div>
 
     <!-- Mac Gatekeeper note -->
-    <div style="max-width: 680px; margin: 20px auto 0; padding: 16px 20px; background: rgba(245,158,11,0.06); border: 1px solid rgba(245,158,11,0.15); border-radius: 12px;">
-      <p style="font-size: 13px; color: #d97706; font-weight: 500; margin-bottom: 4px;">Mac users: getting a security warning?</p>
-      <p style="font-size: 13px; color: var(--text2);">macOS may say it cannot verify the app. Just right-click the app icon in Finder and choose <strong>Open</strong>. Click Open in the popup. That is it, it will work fine after that.</p>
+    <div style="max-width: 680px; margin: 20px auto 0; padding: 20px 24px; background: rgba(245,158,11,0.06); border: 1px solid rgba(245,158,11,0.15); border-radius: 12px;">
+      <p style="font-size: 13px; color: #d97706; font-weight: 600; margin-bottom: 8px;">Mac users: getting a security warning?</p>
+      <p style="font-size: 13px; color: var(--text2); margin-bottom: 14px;">macOS blocks apps without an Apple certificate. You can fix it in one of two ways:</p>
+
+      <p style="font-size: 12px; color: var(--text2); font-weight: 500; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.06em;">Option 1 - Terminal (fastest)</p>
+      <p style="font-size: 12px; color: var(--text2); margin-bottom: 8px;">Open Terminal and run this command, then double-click the app normally:</p>
+      <div style="background: var(--bg); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 10px 14px; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px; color: #a3e635; margin-bottom: 16px; user-select: all;">
+        xattr -cr /Applications/CreatorOS.app
+      </div>
+
+      <p style="font-size: 12px; color: var(--text2); font-weight: 500; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.06em;">Option 2 - No terminal needed</p>
+      <p style="font-size: 13px; color: var(--text2);">Right-click the app in Finder, choose <strong>Open</strong>, then click <strong>Open</strong> in the popup. Done. It will work normally every time after that.</p>
     </div>
   </section>
 
