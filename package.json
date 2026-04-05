@@ -22,7 +22,6 @@
     "appId": "com.creatoros.app",
     "productName": "CreatorOS",
     "copyright": "Copyright © 2026 Sparsh Upadhyay",
-    "afterPack": "./build/afterPack.js",
     "directories": {
       "output": "release"
     },
@@ -52,7 +51,6 @@
       "category": "public.app-category.productivity",
       "hardenedRuntime": false,
       "gatekeeperAssess": false,
-      "sign": "./build/sign.js",
       "target": [
         {
           "target": "dmg",
