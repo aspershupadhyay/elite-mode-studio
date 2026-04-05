@@ -13,7 +13,19 @@ event loop is never blocked.
 import time, io, base64, random, math
 import numpy as np
 from PIL import Image as PILImage
-from playwright.sync_api import sync_playwright, Page
+
+try:
+    from playwright.sync_api import sync_playwright, Page
+    _PLAYWRIGHT_OK = True
+except ImportError:
+    _PLAYWRIGHT_OK = False
+    Page = object  # type: ignore[assignment,misc]
+
+try:
+    import cv2
+    _CV2_OK = True
+except ImportError:
+    _CV2_OK = False
 
 # ── Configuration (mirrors instagram_automation/config.py) ────────────────────
 
@@ -289,6 +301,9 @@ def generate_image(prompt: str, progress_cb=None) -> dict:
     progress_cb(status_string) is called at key milestones for SSE streaming.
     Returns {"ok": bool, "base64": str|None, "error": str|None}
     """
+    if not _PLAYWRIGHT_OK:
+        return {"ok": False, "base64": None, "error": "playwright not available in this build"}
+
     cdp = check_cdp()
     if not cdp["ok"]:
         return {"ok": False, "base64": None, "error": cdp["message"]}

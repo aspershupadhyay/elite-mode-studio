@@ -72,7 +72,10 @@ except Exception:
 log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
-DOCS_DIR          = os.path.join(os.path.dirname(__file__), "..", "docs")
+# In frozen PyInstaller binary CREATOROS_BASE points to sys._MEIPASS.
+# In dev it's the backend/ directory — resolves to repo root one level up.
+_creatoros_base = os.environ.get('CREATOROS_BASE', os.path.join(os.path.dirname(__file__), '..'))
+DOCS_DIR        = os.path.join(_creatoros_base, 'docs')
 CONFIG_PATH       = os.path.join(os.path.dirname(__file__), "search_config.json")
 FAISS_INDEX_PATH  = os.path.join(os.path.dirname(__file__), "data", "faiss_index")
 MAX_CONTEXT_CHARS = 16_000
