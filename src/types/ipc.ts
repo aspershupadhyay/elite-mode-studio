@@ -161,6 +161,19 @@ export interface StartImageGenResult {
   rejected: number
 }
 
+// ── Setup / first-run ──────────────────────────────────────────────────────
+
+export interface SetupCheckResult {
+  /** true when NVIDIA_API_KEY and TAVILY_API_KEY are both present */
+  configured: boolean
+  missingKeys: string[]
+}
+
+export interface SetupSaveRequest {
+  nvidiaKey: string
+  tavilyKey: string
+}
+
 // ── Channel map (type-level registry) ─────────────────────────────────────
 
 export type IpcChannels = {
@@ -200,5 +213,13 @@ export type IpcChannels = {
   'image-gen:progress': {
     request: ImageGenProgress
     response: void
+  }
+  'setup:check': {
+    request: void
+    response: SetupCheckResult
+  }
+  'setup:save-config': {
+    request: SetupSaveRequest
+    response: { ok: boolean; error?: string }
   }
 }

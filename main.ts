@@ -127,6 +127,43 @@ function createWindow(): void {
 // ── IPC ────────────────────────────────────────────────────────────────────
 ipcMain.handle('open-auth-popup', (_event, url: string) => { handlePopup(url) })
 ipcMain.handle('open-external',   (_event, url: string) => shell.openExternal(url))
+
+// ── First-run setup ────────────────────────────────────────────────────────
+ipcMain.handle('setup:check', async (): Promise<{ configured: boolean; missingKeys: string[] }> => {
+  try {
+    const body = await new Promise<string>((resolve, reject) => {
+      const req = http.get('http://127.0.0.1:8000/api/health', (res) => {
+        let data = ''
+        res.on('data', (chunk: Buffer) => { data += chunk.toString() })
+        res.on('end', () => resolve(data))
+      })
+      req.on('error', reject)
+      req.setTimeout(3000, () => { req.destroy(); reject(new Error('timeout')) })
+    })
+    const json    = JSON.parse(body) as { missing_keys?: string[] }
+    const missing = json.missing_keys ?? []
+    return { configured: missing.length === 0, missingKeys: missing }
+  } catch {
+    return { configured: false, missingKeys: ['NVIDIA_API_KEY', 'TAVILY_API_KEY'] }
+  }
+})
+
+ipcMain.handle('setup:save-config', (_event, req: { nvidiaKey: string; tavilyKey: string }): { ok: boolean; error?: string } => {
+  try {
+    const configDir = path.join(app.getPath('userData'), 'backend')
+    fs.mkdirSync(configDir, { recursive: true })
+    const content = [
+      `NVIDIA_API_KEY=${req.nvidiaKey.trim()}`,
+      `TAVILY_API_KEY=${req.tavilyKey.trim()}`,
+      '',
+    ].join('\n')
+    fs.writeFileSync(path.join(configDir, '.env'), content, 'utf8')
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: String(err) }
+  }
+})
+
 ipcMain.handle('clear-browser-data', async () => {
   const { session: electronSession } = await import('electron')
   const ses = electronSession.fromPartition('persist:ai-browser')

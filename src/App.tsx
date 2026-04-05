@@ -8,6 +8,7 @@ import DesignStudio from './pages/studio/DesignStudio'
 import TemplateGallery from './pages/templates/TemplateGallery'
 import PostHistory from './pages/history/PostHistory'
 import Settings from './pages/settings/Settings'
+import SetupModal from './pages/settings/SetupModal'
 import Login from './pages/auth/Login'
 import { apiFetch } from './api'
 import type { LoadTemplatePayload } from './pages/templates/TemplateGallery'
@@ -207,8 +208,26 @@ export default function App(): React.ReactElement {
   const [galleryRefreshKey, setGalleryRefreshKey] = useState<number>(0)
   const [authState, setAuthState] = useState<AuthState>(getAuthState)
   const [activeSchema, setActiveSchema] = useState<ContentSchemaConfig>(getActiveSchema)
+  const [setupNeeded,  setSetupNeeded]  = useState(false)
+  const [setupMissing, setSetupMissing] = useState<string[]>([])
 
   const refreshSchema = (): void => { setActiveSchema(getActiveSchema()) }
+
+  useEffect(() => {
+    // Wait 3 s for backend to start, then check if API keys are configured
+    const t = setTimeout(async () => {
+      try {
+        const result = await window.api.setupCheck()
+        if (!result.configured) {
+          setSetupMissing(result.missingKeys)
+          setSetupNeeded(true)
+        }
+      } catch {
+        // Backend not up yet — skip silently
+      }
+    }, 3000)
+    return () => clearTimeout(t)
+  }, [])
 
   // ── Image generation pipeline ─────────────────────────────────────────────
   // generatedImages: postId → file:// URL — fed to Forge (PostCard) + Studio (canvas)
@@ -384,6 +403,12 @@ export default function App(): React.ReactElement {
         </div>
 
       </div>
+      {setupNeeded && (
+        <SetupModal
+          missingKeys={setupMissing}
+          onComplete={() => setSetupNeeded(false)}
+        />
+      )}
     </SchemaContext.Provider>
   )
 }

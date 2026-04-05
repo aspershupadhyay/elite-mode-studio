@@ -8,6 +8,7 @@ import type {
   SavePngBatchRequest, SavePngBatchResult, SessionData,
   AuthStartRequest, AuthStartResult, AuthCompleteEvent, AuthValidateResult,
   StartImageGenRequest, StartImageGenResult, ImageGenProgress,
+  SetupCheckResult, SetupSaveRequest,
 } from './types/ipc'
 import type { JSX as ReactJSX } from 'react'
 
@@ -93,6 +94,9 @@ declare global {
       onImageGenProgress?:  (cb: (progress: ImageGenProgress) => void) => (() => void)
       getImageGenConfig?:   () => Promise<{ chatGptUrl: string }>
       setImageGenUrl?:      (url: string) => Promise<void>
+      // First-run setup
+      setupCheck:      () => Promise<SetupCheckResult>
+      setupSaveConfig: (req: SetupSaveRequest) => Promise<{ ok: boolean; error?: string }>
     }
   }
 

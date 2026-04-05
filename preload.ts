@@ -3,6 +3,7 @@ import type {
   SavePngBatchRequest, SavePngBatchResult, SessionData,
   AuthStartRequest, AuthStartResult, AuthCompleteEvent, AuthValidateResult,
   StartImageGenRequest, StartImageGenResult, ImageGenProgress,
+  SetupCheckResult, SetupSaveRequest,
 } from './src/types/ipc'
 
 contextBridge.exposeInMainWorld('api', {
@@ -67,6 +68,12 @@ contextBridge.exposeInMainWorld('api', {
   setImageGenUrl: (url: string): Promise<void> =>
     ipcRenderer.invoke('image-gen:set-url', url),
 
+  setupCheck: (): Promise<SetupCheckResult> =>
+    ipcRenderer.invoke('setup:check'),
+
+  setupSaveConfig: (req: SetupSaveRequest): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('setup:save-config', req),
+
   // ── Read local file as base64 data URL (dev: file:// blocked by SOP) ───
   readLocalImage: (filePath: string): Promise<string | null> =>
     ipcRenderer.invoke('read-local-image', filePath),
@@ -125,4 +132,6 @@ contextBridge.exposeInMainWorld('api', {
   onImageGenProgress:   (cb: (progress: ImageGenProgress) => void) => (() => void)
   getImageGenConfig:    () => Promise<{ chatGptUrl: string }>
   setImageGenUrl:       (url: string) => Promise<void>
+  setupCheck:      () => Promise<SetupCheckResult>
+  setupSaveConfig: (req: SetupSaveRequest) => Promise<{ ok: boolean; error?: string }>
 })
