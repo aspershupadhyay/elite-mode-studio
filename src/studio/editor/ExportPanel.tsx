@@ -1,9 +1,10 @@
 /**
- * ExportPanel.tsx — Figma-style multi-format export panel.
- * Supports PNG, JPEG, WEBP, SVG, and PDF with scope, scale, quality, and naming controls.
+ * ExportPanel.tsx — Multi-format export with scope control.
+ * Supports PNG, JPEG, WEBP, SVG with proper file size calculation.
+ * Scope: Current Page or All Pages (with selective pick).
  */
 
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import type { RefObject } from 'react'
 import type { Canvas as FabricCanvas } from 'fabric'
 import type { CanvasHandle } from '@/types/canvas'
@@ -13,11 +14,14 @@ export interface ExportPanelProps {
   canvasRef: RefObject<CanvasHandle | null>
   canvasWidth: number
   canvasHeight: number
+  pageCount?: number
   onClose: () => void
+  /** Called when user wants to export all pages — parent handles page switching + capture */
+  onExportAllPages?: (opts: { format: ExportFormat; scale: number; quality: number; transparent: boolean; selectedPages?: number[] }) => void
 }
 
-type ExportFormat = 'png' | 'jpeg' | 'webp' | 'svg' | 'pdf'
-type ExportScope = 'page' | 'selected'
+export type ExportFormat = 'png' | 'jpeg' | 'webp' | 'svg'
+type ExportScope = 'page' | 'all-pages'
 type NamingMode = 'auto' | 'custom'
 
 const FORMAT_OPTIONS: { id: ExportFormat; label: string; ext: string }[] = [
@@ -25,12 +29,14 @@ const FORMAT_OPTIONS: { id: ExportFormat; label: string; ext: string }[] = [
   { id: 'jpeg', label: 'JPEG', ext: '.jpg' },
   { id: 'webp', label: 'WebP', ext: '.webp' },
   { id: 'svg',  label: 'SVG',  ext: '.svg' },
-  { id: 'pdf',  label: 'PDF',  ext: '.pdf' },
 ]
 
 const SCALE_OPTIONS = [1, 2, 3, 4] as const
 
-export function ExportPanel({ canvas, canvasRef, canvasWidth, canvasHeight, onClose }: ExportPanelProps): JSX.Element {
+export function ExportPanel({
+  canvas, canvasWidth, canvasHeight,
+  pageCount = 1, onClose, onExportAllPages,
+}: ExportPanelProps): JSX.Element {
   const [format, setFormat]       = useState<ExportFormat>('png')
   const [scale, setScale]         = useState(2)
   const [quality, setQuality]     = useState(90)
@@ -39,105 +45,175 @@ export function ExportPanel({ canvas, canvasRef, canvasWidth, canvasHeight, onCl
   const [namingMode, setNamingMode] = useState<NamingMode>('auto')
   const [customName, setCustomName] = useState('design')
   const [exporting, setExporting] = useState(false)
+  const [actualSize, setActualSize] = useState<string | null>(null)
+  // For "all pages" — let user pick which pages to export
+  const [selectedPages, setSelectedPages] = useState<Set<number>>(() => {
+    const all = new Set<number>()
+    for (let i = 0; i < pageCount; i++) all.add(i)
+    return all
+  })
   const panelRef = useRef<HTMLDivElement>(null)
 
-  const hasSelection = !!canvas?.getActiveObject()
   const outputW = canvasWidth * scale
   const outputH = canvasHeight * scale
 
-  // Estimate file size (rough)
-  const estimateSize = (): string => {
-    const pixels = outputW * outputH
-    let bytesPerPixel = 4 // PNG
-    if (format === 'jpeg') bytesPerPixel = 0.3 * (quality / 100)
-    else if (format === 'webp') bytesPerPixel = 0.25 * (quality / 100)
-    else if (format === 'svg') return '~50-200 KB'
-    else if (format === 'pdf') bytesPerPixel = 3
-    const sizeKB = Math.round((pixels * bytesPerPixel) / 1024)
-    if (sizeKB > 1024) return `~${(sizeKB / 1024).toFixed(1)} MB`
-    return `~${sizeKB} KB`
-  }
+  // Update selected pages when pageCount changes
+  useEffect(() => {
+    const all = new Set<number>()
+    for (let i = 0; i < pageCount; i++) all.add(i)
+    setSelectedPages(all)
+  }, [pageCount])
 
-  const getFilename = (): string => {
-    const base = namingMode === 'custom' ? customName : `design_${canvasWidth}x${canvasHeight}`
-    const scaleSuffix = scale > 1 ? `_${scale}x` : ''
-    const ext = FORMAT_OPTIONS.find(f => f.id === format)?.ext || '.png'
-    return `${base}${scaleSuffix}${ext}`
-  }
+  // Calculate real file size by generating a small preview
+  useEffect(() => {
+    if (!canvas) { setActualSize(null); return }
+    setActualSize(null) // reset while calculating
 
-  const doExport = useCallback(async () => {
-    if (!canvas || !canvasRef.current) return
-    setExporting(true)
-
-    try {
-      const c = canvas
-      const filename = getFilename()
-
-      if (format === 'svg') {
-        // SVG export
-        const svg = c.toSVG()
-        const blob = new Blob([svg], { type: 'image/svg+xml' })
-        const url = URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = url; a.download = filename; a.click()
-        URL.revokeObjectURL(url)
-      } else if (format === 'pdf') {
-        // PDF via canvas → image → jsPDF (if available) or fallback to PNG
-        const dataUrl = c.toDataURL({ format: 'png', quality: 1, multiplier: scale })
-        const a = document.createElement('a')
-        a.href = dataUrl; a.download = filename.replace('.pdf', '.png'); a.click()
-      } else {
-        // Raster formats: PNG, JPEG, WEBP
-        const origBg = c.backgroundColor
-        if (transparent && format === 'png') {
-          c.backgroundColor = undefined as unknown as string
-          c.renderAll()
-        }
-
-        const fabricFormat = format === 'webp' ? 'png' : format  // Fabric doesn't support webp natively
+    const timer = setTimeout(() => {
+      try {
+        const c = canvas
+        // Generate at 0.5x to estimate quickly
+        const previewScale = Math.min(scale, 1)
+        const fabricFormat = format === 'webp' ? 'png' : format === 'svg' ? 'png' : format
         const dataUrl = c.toDataURL({
           format: fabricFormat,
           quality: format === 'jpeg' ? quality / 100 : 1,
-          multiplier: scale,
+          multiplier: previewScale,
         })
 
-        if (transparent && format === 'png') {
-          c.backgroundColor = origBg
-          c.renderAll()
-        }
+        // Calculate actual bytes from base64
+        const base64Len = dataUrl.split(',')[1]?.length || 0
+        const bytes = Math.round((base64Len * 3) / 4)
+        // Scale up proportionally from preview to actual
+        const scaleFactor = (scale / previewScale) ** 2
+        const estimatedBytes = Math.round(bytes * scaleFactor)
 
-        if (format === 'webp') {
-          // Convert PNG data URL to WebP via offscreen canvas
-          const img = new Image()
-          img.onload = () => {
-            const offCanvas = document.createElement('canvas')
-            offCanvas.width = img.width; offCanvas.height = img.height
-            const ctx = offCanvas.getContext('2d')!
-            ctx.drawImage(img, 0, 0)
-            offCanvas.toBlob(blob => {
-              if (!blob) return
-              const url = URL.createObjectURL(blob)
-              const a = document.createElement('a'); a.href = url; a.download = filename; a.click()
-              URL.revokeObjectURL(url)
-            }, 'image/webp', quality / 100)
-          }
-          img.src = dataUrl
+        if (estimatedBytes > 1024 * 1024) {
+          setActualSize(`~${(estimatedBytes / (1024 * 1024)).toFixed(1)} MB`)
         } else {
-          const a = document.createElement('a')
-          a.href = dataUrl; a.download = filename; a.click()
+          setActualSize(`~${Math.round(estimatedBytes / 1024)} KB`)
         }
+      } catch {
+        setActualSize(null)
+      }
+    }, 200) // debounce
+
+    return () => clearTimeout(timer)
+  }, [canvas, format, scale, quality, transparent])
+
+  const getFilename = (pageIdx?: number): string => {
+    const base = namingMode === 'custom' ? customName : `design_${canvasWidth}x${canvasHeight}`
+    const scaleSuffix = scale > 1 ? `_${scale}x` : ''
+    const pageSuffix = pageIdx !== undefined ? `_p${pageIdx + 1}` : ''
+    const ext = FORMAT_OPTIONS.find(f => f.id === format)?.ext || '.png'
+    return `${base}${pageSuffix}${scaleSuffix}${ext}`
+  }
+
+  const downloadDataUrl = (dataUrl: string, filename: string): void => {
+    const a = document.createElement('a')
+    a.href = dataUrl
+    a.download = filename
+    a.click()
+  }
+
+  const downloadBlob = (blob: Blob, filename: string): void => {
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const exportCurrentPage = useCallback(async () => {
+    if (!canvas) return
+    const c = canvas
+    const filename = getFilename()
+
+    if (format === 'svg') {
+      const svg = c.toSVG()
+      downloadBlob(new Blob([svg], { type: 'image/svg+xml' }), filename)
+      return
+    }
+
+    // Raster: PNG, JPEG, WEBP
+    const origBg = c.backgroundColor
+    if (transparent && format === 'png') {
+      c.backgroundColor = undefined as unknown as string
+      c.renderAll()
+    }
+
+    const dataUrl = c.toDataURL({
+      format: format === 'webp' ? 'png' : format,
+      quality: format === 'jpeg' ? quality / 100 : 1,
+      multiplier: scale,
+    })
+
+    if (transparent && format === 'png') {
+      c.backgroundColor = origBg
+      c.renderAll()
+    }
+
+    if (format === 'webp') {
+      // Convert via offscreen canvas
+      const img = new Image()
+      img.onload = () => {
+        const off = document.createElement('canvas')
+        off.width = img.width; off.height = img.height
+        const ctx = off.getContext('2d')!
+        ctx.drawImage(img, 0, 0)
+        off.toBlob(blob => {
+          if (blob) downloadBlob(blob, filename)
+        }, 'image/webp', quality / 100)
+      }
+      img.src = dataUrl
+    } else {
+      downloadDataUrl(dataUrl, filename)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canvas, format, scale, quality, transparent, namingMode, customName, canvasWidth, canvasHeight])
+
+  const doExport = useCallback(async () => {
+    setExporting(true)
+    try {
+      if (scope === 'all-pages' && onExportAllPages) {
+        onExportAllPages({
+          format, scale, quality, transparent,
+          selectedPages: [...selectedPages].sort(),
+        })
+      } else {
+        await exportCurrentPage()
       }
     } catch (err) {
       console.error('[ExportPanel] Export failed:', err)
     } finally {
       setExporting(false)
+      onClose()
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canvas, canvasRef, format, scale, quality, transparent, namingMode, customName, canvasWidth, canvasHeight])
+  }, [scope, onExportAllPages, format, scale, quality, transparent, selectedPages, exportCurrentPage, onClose])
 
   const supportsQuality = format === 'jpeg' || format === 'webp'
   const supportsTransparent = format === 'png'
   const supportsScale = format !== 'svg'
+
+  const togglePage = (idx: number): void => {
+    setSelectedPages(prev => {
+      const next = new Set(prev)
+      if (next.has(idx)) next.delete(idx)
+      else next.add(idx)
+      return next
+    })
+  }
+
+  const toggleAllPages = (): void => {
+    if (selectedPages.size === pageCount) {
+      setSelectedPages(new Set())
+    } else {
+      const all = new Set<number>()
+      for (let i = 0; i < pageCount; i++) all.add(i)
+      setSelectedPages(all)
+    }
+  }
 
   return (
     <div ref={panelRef}
@@ -165,25 +241,57 @@ export function ExportPanel({ canvas, canvasRef, canvasWidth, canvasHeight, onCl
       <div className="mb-3">
         <label className="text-[10px] text-warm-faint uppercase tracking-widest font-semibold block mb-1">Scope</label>
         <div className="flex gap-1">
-          {([
-            { id: 'page' as ExportScope, label: 'Current Page' },
-            { id: 'selected' as ExportScope, label: 'Selection', disabled: !hasSelection },
-          ]).map(opt => (
-            <button key={opt.id}
-              disabled={opt.disabled}
-              onClick={() => setScope(opt.id)}
+          <button
+            onClick={() => setScope('page')}
+            className={`flex-1 py-1.5 text-[11px] rounded-md border transition-all cursor-pointer ${
+              scope === 'page'
+                ? 'bg-accent/12 border-accent/40 text-accent font-medium'
+                : 'bg-elite-800 border-elite-600/30 text-warm-muted hover:border-accent/30'
+            }`}>
+            Current Page
+          </button>
+          {pageCount > 1 && (
+            <button
+              onClick={() => setScope('all-pages')}
               className={`flex-1 py-1.5 text-[11px] rounded-md border transition-all cursor-pointer ${
-                scope === opt.id
+                scope === 'all-pages'
                   ? 'bg-accent/12 border-accent/40 text-accent font-medium'
-                  : opt.disabled
-                    ? 'bg-elite-800/50 border-elite-600/20 text-warm-faint/30 cursor-not-allowed'
-                    : 'bg-elite-800 border-elite-600/30 text-warm-muted hover:border-accent/30'
+                  : 'bg-elite-800 border-elite-600/30 text-warm-muted hover:border-accent/30'
               }`}>
-              {opt.label}
+              All Pages ({pageCount})
             </button>
-          ))}
+          )}
         </div>
       </div>
+
+      {/* Page picker (when scope=all-pages) */}
+      {scope === 'all-pages' && pageCount > 1 && (
+        <div className="mb-3">
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="text-[10px] text-warm-faint uppercase tracking-widest font-semibold">Select Pages</label>
+            <button onClick={toggleAllPages}
+              className="text-[10px] text-accent hover:text-accent/80 cursor-pointer transition-colors">
+              {selectedPages.size === pageCount ? 'Deselect all' : 'Select all'}
+            </button>
+          </div>
+          <div className="grid grid-cols-5 gap-1.5 max-h-[100px] overflow-y-auto">
+            {Array.from({ length: pageCount }, (_, i) => (
+              <button key={i}
+                onClick={() => togglePage(i)}
+                className={`py-1 text-[11px] rounded border transition-all cursor-pointer ${
+                  selectedPages.has(i)
+                    ? 'bg-accent/15 border-accent/40 text-accent font-medium'
+                    : 'bg-elite-800 border-elite-600/30 text-warm-faint hover:border-accent/30'
+                }`}>
+                {i + 1}
+              </button>
+            ))}
+          </div>
+          <span className="text-[10px] text-warm-faint mt-1 block">
+            {selectedPages.size} of {pageCount} pages selected
+          </span>
+        </div>
+      )}
 
       {/* Format */}
       <div className="mb-3">
@@ -224,7 +332,7 @@ export function ExportPanel({ canvas, canvasRef, canvasWidth, canvasHeight, onCl
         </div>
       )}
 
-      {/* Quality (JPEG/WEBP only) */}
+      {/* Quality (JPEG/WEBP) */}
       {supportsQuality && (
         <div className="mb-3">
           <div className="flex items-center justify-between mb-1">
@@ -275,20 +383,25 @@ export function ExportPanel({ canvas, canvasRef, canvasWidth, canvasHeight, onCl
         )}
       </div>
 
-      {/* Size estimate */}
+      {/* Size estimate — based on actual canvas data */}
       <div className="mb-3 flex items-center justify-between text-[10px] text-warm-faint px-1">
         <span>Estimated size</span>
-        <span className="font-mono">{estimateSize()}</span>
+        <span className="font-mono">{actualSize ?? 'Calculating...'}</span>
       </div>
 
       {/* Export button */}
       <button
         onClick={doExport}
-        disabled={exporting}
+        disabled={exporting || (scope === 'all-pages' && selectedPages.size === 0)}
         className="w-full py-2.5 rounded-lg bg-accent text-accent-fg text-[12px] font-semibold
                    hover:brightness-110 active:scale-[0.98] transition-all cursor-pointer
                    disabled:opacity-50 disabled:cursor-not-allowed">
-        {exporting ? 'Exporting...' : `Export ${format.toUpperCase()}`}
+        {exporting
+          ? 'Exporting...'
+          : scope === 'all-pages'
+            ? `Export ${selectedPages.size} Page${selectedPages.size !== 1 ? 's' : ''} as ${format.toUpperCase()}`
+            : `Export ${format.toUpperCase()}`
+        }
       </button>
     </div>
   )

@@ -100,6 +100,8 @@ export interface ToolbarProps {
   onTemplateUpdated?: () => void
   autoFormat?: boolean
   onAutoFormatToggle?: (enabled: boolean) => void
+  pageCount?: number
+  onExportAllPages?: (opts: { format: import('./ExportPanel').ExportFormat; scale: number; quality: number; transparent: boolean; selectedPages?: number[] }) => void
 }
 
 export default function Toolbar({
@@ -111,6 +113,8 @@ export default function Toolbar({
   onTemplateUpdated,
   autoFormat = true,
   onAutoFormatToggle,
+  pageCount = 1,
+  onExportAllPages,
 }: ToolbarProps): JSX.Element {
   const [showSize,    setShowSize]    = useState(false)
   const [showExport,  setShowExport]  = useState(false)
@@ -342,7 +346,9 @@ export default function Toolbar({
               canvasRef={canvasRef}
               canvasWidth={currentSize.width}
               canvasHeight={currentSize.height}
+              pageCount={pageCount}
               onClose={() => setShowExport(false)}
+              onExportAllPages={onExportAllPages}
             />
           )}
         </div>

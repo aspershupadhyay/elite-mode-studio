@@ -225,40 +225,46 @@ export function findSnaps(
 
   // ── Object-to-object distance measurements ──────────────────────────────────
   const nearbyDistances: DistanceMeasurement[] = []
-  const NEARBY_PX = 80  // show distance measurements within 80px
+  const NEARBY_PX = 120  // show distance measurements within 120px
   for (const obj of others) {
     const ob = bbox(obj)
-    // Horizontal spacing
-    if (ob.right <= b.left && b.left - ob.right <= NEARBY_PX) {
+
+    // Only measure objects that overlap on the perpendicular axis
+    // (like Figma — only show gap when objects are roughly aligned)
+    const hOverlap = !(b.bottom < ob.top || b.top > ob.bottom)  // vertically overlapping
+    const vOverlap = !(b.right < ob.left || b.left > ob.right)  // horizontally overlapping
+
+    // Horizontal spacing (gap between left/right edges)
+    if (hOverlap && ob.right <= b.left && b.left - ob.right <= NEARBY_PX) {
       nearbyDistances.push({
         type: 'h',
         from: ob.right, to: b.left,
-        midY: Math.min(b.cy, ob.cy),
+        midY: (Math.max(b.top, ob.top) + Math.min(b.bottom, ob.bottom)) / 2,
         val:  Math.round(b.left - ob.right),
       })
     }
-    if (b.right <= ob.left && ob.left - b.right <= NEARBY_PX) {
+    if (hOverlap && b.right <= ob.left && ob.left - b.right <= NEARBY_PX) {
       nearbyDistances.push({
         type: 'h',
         from: b.right, to: ob.left,
-        midY: Math.min(b.cy, ob.cy),
+        midY: (Math.max(b.top, ob.top) + Math.min(b.bottom, ob.bottom)) / 2,
         val:  Math.round(ob.left - b.right),
       })
     }
-    // Vertical spacing
-    if (ob.bottom <= b.top && b.top - ob.bottom <= NEARBY_PX) {
+    // Vertical spacing (gap between top/bottom edges)
+    if (vOverlap && ob.bottom <= b.top && b.top - ob.bottom <= NEARBY_PX) {
       nearbyDistances.push({
         type: 'v',
         from: ob.bottom, to: b.top,
-        midX: Math.min(b.cx, ob.cx),
+        midX: (Math.max(b.left, ob.left) + Math.min(b.right, ob.right)) / 2,
         val:  Math.round(b.top - ob.bottom),
       })
     }
-    if (b.bottom <= ob.top && ob.top - b.bottom <= NEARBY_PX) {
+    if (vOverlap && b.bottom <= ob.top && ob.top - b.bottom <= NEARBY_PX) {
       nearbyDistances.push({
         type: 'v',
         from: b.bottom, to: ob.top,
-        midX: Math.min(b.cx, ob.cx),
+        midX: (Math.max(b.left, ob.left) + Math.min(b.right, ob.right)) / 2,
         val:  Math.round(ob.top - b.bottom),
       })
     }
