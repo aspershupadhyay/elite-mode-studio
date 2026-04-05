@@ -1,11 +1,24 @@
 import os
+import sys
 from dotenv import load_dotenv
 from pathlib import Path
 
-# Always load from the .env file next to this file, with override=True
-# so updated keys in .env always win over stale environment variables.
-_env_path = Path(__file__).parent / ".env"
-load_dotenv(_env_path, override=True)
+if sys.platform == "darwin":
+    DATA_DIR = Path.home() / "Library" / "Application Support" / "CreatorOS" / "backend"
+elif sys.platform == "win32":
+    DATA_DIR = Path(os.environ.get("APPDATA", Path.home())) / "CreatorOS" / "backend"
+else:
+    DATA_DIR = Path.home() / ".creatoros" / "backend"
+
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+_usr_env = DATA_DIR / ".env"
+_bundled_env = Path(__file__).parent / ".env"
+
+if _usr_env.exists():
+    load_dotenv(_usr_env, override=True)
+else:
+    load_dotenv(_bundled_env, override=True)
 
 NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY", "")
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")

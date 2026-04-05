@@ -1,7 +1,8 @@
 {
-  "name": "nvidia-rag-app",
+  "name": "creator-os",
   "version": "1.0.0",
-  "description": "NVIDIA RAG Desktop App",
+  "description": "CreatorOS — AI-powered social media content & design automation",
+  "author": "Sparsh Upadhyay",
   "main": "main.js",
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -9,7 +10,81 @@
     "dev": "npm run build:electron && concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
     "build": "npm run build:electron && vite build",
     "electron": "npm run build:electron && electron .",
-    "start": "npm run build:electron && vite build && electron ."
+    "start": "npm run build:electron && vite build && electron .",
+    "dist": "npm run build && electron-builder --mac dmg",
+    "dist:dir": "npm run build && electron-builder --mac dir"
+  },
+  "build": {
+    "appId": "com.creatoros.app",
+    "productName": "CreatorOS",
+    "copyright": "Copyright © 2026 Sparsh Upadhyay",
+    "afterPack": "./build/afterPack.js",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "main.js",
+      "main.js.map",
+      "preload.js",
+      "preload.js.map",
+      "src/pages/browser/automation/**/*.js",
+      "src/pages/browser/automation/**/*.js.map",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "backend",
+        "to": "backend",
+        "filter": [
+          "**/*",
+          "!**/__pycache__/**",
+          "!**/*.pyc",
+          "!.env",
+          "!search_config.json",
+          "!data/**",
+          "!venv/**",
+          "!.venv/**"
+        ]
+      }
+    ],
+    "mac": {
+      "icon": "build/icon.icns",
+      "category": "public.app-category.productivity",
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "sign": "./build/sign.js",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ]
+    },
+    "dmg": {
+      "title": "CreatorOS",
+      "window": {
+        "width": 540,
+        "height": 380
+      },
+      "contents": [
+        {
+          "x": 150,
+          "y": 185,
+          "type": "file"
+        },
+        {
+          "x": 390,
+          "y": 185,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
+    }
   },
   "dependencies": {
     "@fontsource-variable/big-shoulders-display": "^5.2.5",
@@ -95,6 +170,7 @@
     "@fontsource/teko": "^5.2.7",
     "@fontsource/yellowtail": "^5.2.8",
     "fabric": "^6.4.3",
+    "jszip": "^3.10.1",
     "lucide-react": "^0.383.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
@@ -110,6 +186,7 @@
     "autoprefixer": "^10.4.18",
     "concurrently": "^8.2.2",
     "electron": "^29.4.6",
+    "electron-builder": "^26.8.1",
     "postcss": "^8.4.35",
     "tailwindcss": "^3.4.1",
     "typescript": "^5.9.3",
