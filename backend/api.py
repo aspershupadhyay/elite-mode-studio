@@ -99,8 +99,8 @@ class TrendingBody(BaseModel):
     freshness: Optional[str] = "2days"
 
 class SettingsBody(BaseModel):
-    nvidia_api_key: str
-    tavily_api_key: str
+    nvidia_api_key: Optional[str] = None
+    tavily_api_key: Optional[str] = None
 
 class SearchConfigBody(BaseModel):
     tavily: Optional[dict] = None
@@ -182,14 +182,20 @@ def test_connectivity():
 
 @app.get("/api/settings")
 def get_settings():
-    return {"nvidia_api_key": NVIDIA_API_KEY, "tavily_api_key": TAVILY_API_KEY}
+    # Never return actual key values - only whether they are set
+    return {
+        "nvidia_api_key_set": bool(NVIDIA_API_KEY),
+        "tavily_api_key_set": bool(TAVILY_API_KEY),
+    }
 
 @app.post("/api/settings")
 def save_settings(body: SettingsBody):
     global pipeline
     env_path = os.path.join(os.path.dirname(__file__), ".env")
-    set_key(env_path, "NVIDIA_API_KEY", body.nvidia_api_key)
-    set_key(env_path, "TAVILY_API_KEY", body.tavily_api_key)
+    if body.nvidia_api_key:
+        set_key(env_path, "NVIDIA_API_KEY", body.nvidia_api_key)
+    if body.tavily_api_key:
+        set_key(env_path, "TAVILY_API_KEY", body.tavily_api_key)
     # Reload env vars so os.getenv picks up the new values immediately
     load_dotenv(env_path, override=True)
     # Reinitialize the pipeline so the new keys are used by all LangChain clients
@@ -823,4 +829,4 @@ def delete_skill(skill_id: str):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("api:app", host="127.0.0.1", port=8000, reload=False)
+    uvicorn.run(app, host="127.0.0.1", port=8000)

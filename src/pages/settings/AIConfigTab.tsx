@@ -49,6 +49,7 @@ interface SearchCfgSlice {
 export interface AIConfigTabProps {
   nvKey: string
   setNvKey: (v: string) => void
+  nvKeySet: boolean
   searchCfg: SearchCfgSlice
   setSearchCfg: (updater: (prev: SearchCfgSlice) => SearchCfgSlice) => void
   onSaveKeys: () => void
@@ -116,6 +117,7 @@ function ModelCard({
 export default function AIConfigTab({
   nvKey,
   setNvKey,
+  nvKeySet,
   searchCfg,
   setSearchCfg,
   onSaveKeys,
@@ -142,8 +144,8 @@ export default function AIConfigTab({
           value={nvKey}
           onChange={setNvKey}
           type="password"
-          placeholder="nvapi-xxxxxxxxxxxx"
-          hint="Get yours at build.nvidia.com — powers all three model roles below"
+          placeholder={nvKeySet ? 'Key saved - paste a new one to replace' : 'nvapi-xxxxxxxxxxxx'}
+          hint="Get yours at build.nvidia.com - powers all three model roles below"
         />
         <div style={{ display: 'flex', gap: 8 }}>
           <PrimaryBtn onClick={onSaveKeys} loading={savingKeys}>

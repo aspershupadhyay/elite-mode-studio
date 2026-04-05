@@ -47,9 +47,9 @@ export default function Login({ status, error }: LoginProps): React.ReactElement
         {/* Logo */}
         <div style={{ textAlign: 'center', marginBottom: 32 }}>
           <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 48, height: 48, borderRadius: 14, background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.2)', marginBottom: 16 }}>
-            <span style={{ fontSize: 22, fontWeight: 800, color: 'var(--green, #10b981)' }}>E</span>
+            <span style={{ fontSize: 22, fontWeight: 800, color: 'var(--green, #10b981)' }}>C</span>
           </div>
-          <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: 'var(--text-primary, #e5e7eb)', letterSpacing: '-0.03em' }}>Elite Mode Studio</h1>
+          <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: 'var(--text-primary, #e5e7eb)', letterSpacing: '-0.03em' }}>CreatorOS</h1>
           <p style={{ margin: '6px 0 0', fontSize: 13, color: 'var(--text-tertiary, #6b7280)' }}>Sign in to continue</p>
         </div>
 

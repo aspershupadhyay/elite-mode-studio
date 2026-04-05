@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CreatorOS - AI Social Media Studio</title>
+  <meta name="description" content="Generate posts, design carousels, and automate your social media content with AI. Free desktop app for Mac, Windows, and Linux." />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0a0a0a;
+      --surface: #111;
+      --surface2: #161616;
+      --border: rgba(255,255,255,0.07);
+      --green: #10b981;
+      --green-dim: rgba(16,185,129,0.12);
+      --green-border: rgba(16,185,129,0.2);
+      --text: #e5e7eb;
+      --text2: #9ca3af;
+      --text3: #4b5563;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+
+    a { color: var(--green); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* Nav */
+    nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(10,10,10,0.9);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      padding: 0 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 56px;
+    }
+
+    .nav-logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -0.03em;
+    }
+
+    .nav-logo-mark {
+      width: 30px;
+      height: 30px;
+      border-radius: 8px;
+      background: var(--green);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 14px;
+      color: #000;
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 24px;
+    }
+
+    .nav-links a {
+      font-size: 14px;
+      color: var(--text2);
+    }
+
+    .nav-links a:hover { color: var(--text); text-decoration: none; }
+
+    /* Hero */
+    .hero {
+      text-align: center;
+      padding: 100px 24px 80px;
+      max-width: 780px;
+      margin: 0 auto;
+    }
+
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      border-radius: 100px;
+      background: var(--green-dim);
+      border: 1px solid var(--green-border);
+      font-size: 12px;
+      color: var(--green);
+      font-weight: 500;
+      margin-bottom: 28px;
+      letter-spacing: 0.02em;
+    }
+
+    .hero h1 {
+      font-size: clamp(40px, 7vw, 72px);
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      line-height: 1.05;
+      margin-bottom: 20px;
+    }
+
+    .hero h1 span { color: var(--green); }
+
+    .hero p {
+      font-size: 18px;
+      color: var(--text2);
+      max-width: 540px;
+      margin: 0 auto 40px;
+      line-height: 1.7;
+    }
+
+    .hero-stat {
+      font-size: 13px;
+      color: var(--text3);
+      margin-top: 16px;
+    }
+
+    /* Download buttons */
+    .download-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      justify-content: center;
+      margin-bottom: 12px;
+    }
+
+    .btn-primary {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 14px 24px;
+      border-radius: 12px;
+      background: var(--green);
+      color: #000;
+      font-weight: 600;
+      font-size: 15px;
+      cursor: pointer;
+      border: none;
+      text-decoration: none;
+      transition: opacity 0.15s;
+    }
+
+    .btn-primary:hover { opacity: 0.88; text-decoration: none; }
+
+    .btn-secondary {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 14px 24px;
+      border-radius: 12px;
+      background: transparent;
+      color: var(--text);
+      font-weight: 500;
+      font-size: 15px;
+      cursor: pointer;
+      border: 1px solid var(--border);
+      text-decoration: none;
+      transition: border-color 0.15s, background 0.15s;
+    }
+
+    .btn-secondary:hover { border-color: rgba(255,255,255,0.15); background: rgba(255,255,255,0.03); text-decoration: none; }
+
+    /* Features */
+    .section {
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 80px 24px;
+    }
+
+    .section-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--green);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      text-align: center;
+      margin-bottom: 12px;
+    }
+
+    .section-title {
+      font-size: clamp(28px, 4vw, 42px);
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      text-align: center;
+      margin-bottom: 14px;
+    }
+
+    .section-sub {
+      font-size: 16px;
+      color: var(--text2);
+      text-align: center;
+      max-width: 520px;
+      margin: 0 auto 60px;
+    }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 16px;
+    }
+
+    .feature-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 28px;
+      transition: border-color 0.15s;
+    }
+
+    .feature-card:hover { border-color: rgba(255,255,255,0.12); }
+
+    .feature-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      background: var(--green-dim);
+      border: 1px solid var(--green-border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      margin-bottom: 16px;
+    }
+
+    .feature-card h3 {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 8px;
+      letter-spacing: -0.02em;
+    }
+
+    .feature-card p {
+      font-size: 14px;
+      color: var(--text2);
+      line-height: 1.6;
+    }
+
+    /* How it works */
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 16px;
+      counter-reset: step;
+    }
+
+    .step {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 28px;
+      counter-increment: step;
+      position: relative;
+    }
+
+    .step-number {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: var(--green-dim);
+      border: 1px solid var(--green-border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--green);
+      margin-bottom: 16px;
+    }
+
+    .step h3 {
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 8px;
+      letter-spacing: -0.02em;
+    }
+
+    .step p {
+      font-size: 13px;
+      color: var(--text2);
+      line-height: 1.6;
+    }
+
+    /* Downloads table */
+    .downloads-section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      overflow: hidden;
+      max-width: 680px;
+      margin: 0 auto;
+    }
+
+    .downloads-header {
+      padding: 24px 28px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .downloads-header h3 {
+      font-size: 16px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+
+    .downloads-header p {
+      font-size: 13px;
+      color: var(--text3);
+      margin-top: 4px;
+    }
+
+    .download-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 28px;
+      border-bottom: 1px solid var(--border);
+      gap: 16px;
+    }
+
+    .download-row:last-child { border-bottom: none; }
+
+    .platform-info {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .platform-icon {
+      font-size: 22px;
+      width: 36px;
+      text-align: center;
+      flex-shrink: 0;
+    }
+
+    .platform-name {
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    .platform-note {
+      font-size: 12px;
+      color: var(--text3);
+    }
+
+    .btn-download {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 16px;
+      border-radius: 8px;
+      background: var(--green-dim);
+      border: 1px solid var(--green-border);
+      color: var(--green);
+      font-size: 13px;
+      font-weight: 500;
+      text-decoration: none;
+      transition: background 0.15s;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .btn-download:hover { background: rgba(16,185,129,0.2); text-decoration: none; }
+
+    /* Setup section */
+    .setup-steps {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 16px;
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    .setup-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 24px;
+    }
+
+    .setup-card .step-number { margin-bottom: 14px; }
+
+    .setup-card h3 {
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .setup-card p {
+      font-size: 13px;
+      color: var(--text2);
+      line-height: 1.6;
+    }
+
+    .setup-card a { font-size: 13px; }
+
+    /* Footer */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 40px 24px;
+      text-align: center;
+    }
+
+    footer p {
+      font-size: 13px;
+      color: var(--text3);
+    }
+
+    /* Divider */
+    .divider {
+      border: none;
+      border-top: 1px solid var(--border);
+    }
+
+    @media (max-width: 600px) {
+      .hero { padding: 70px 20px 60px; }
+      .nav-links { display: none; }
+      .download-row { flex-direction: column; align-items: flex-start; gap: 10px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Nav -->
+  <nav>
+    <div class="nav-logo">
+      <div class="nav-logo-mark">C</div>
+      CreatorOS
+    </div>
+    <div class="nav-links">
+      <a href="#features">Features</a>
+      <a href="#how-it-works">How it works</a>
+      <a href="#download">Download</a>
+      <a href="https://github.com/aspershupadhyay/elite-mode-studio" target="_blank">GitHub</a>
+    </div>
+  </nav>
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="hero-badge">
+      <span>Free and open source</span>
+    </div>
+    <h1>Make social media<br />posts with <span>AI</span></h1>
+    <p>
+      CreatorOS writes your captions, designs your carousels, and researches trending topics.
+      All on your own computer, completely private.
+    </p>
+    <div class="download-group">
+      <a href="#download" class="btn-primary">
+        Download Free
+      </a>
+      <a href="https://github.com/aspershupadhyay/elite-mode-studio" target="_blank" class="btn-secondary">
+        View on GitHub
+      </a>
+    </div>
+    <p class="hero-stat">Posts made with CreatorOS have hit 149K, 152K, and 1.3M views on Instagram</p>
+  </section>
+
+  <hr class="divider" />
+
+  <!-- Features -->
+  <section class="section" id="features">
+    <p class="section-label">Features</p>
+    <h2 class="section-title">Everything you need to create great content</h2>
+    <p class="section-sub">No subscription. No cloud. Your ideas stay on your computer.</p>
+
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="feature-icon">✍️</div>
+        <h3>AI Post Generator</h3>
+        <p>Pick a topic, choose your tone and platform, and get a complete caption in seconds. Works for Instagram, LinkedIn, Twitter, and more.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🎨</div>
+        <h3>Design Studio</h3>
+        <p>A drag-and-drop canvas like Figma, right inside the app. Add text, shapes, images, and frames. Snap guides and rulers are built in.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🌐</div>
+        <h3>AI Web Search</h3>
+        <p>The app searches the web for fresh, relevant information before writing your post. No more outdated or generic content.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">📄</div>
+        <h3>Document Mode</h3>
+        <p>Upload a PDF or document and use it as context for generation. Great for writing posts about your own research or reports.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🖼️</div>
+        <h3>8 Pro Templates</h3>
+        <p>Start from a professionally designed template: Dark Minimal, Bold Gradient, Neon Dark, LinkedIn Banner, Story format, and more.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">📚</div>
+        <h3>Post History</h3>
+        <p>Every post you generate is automatically saved. Go back anytime to copy, edit, or send it to the design canvas.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🤖</div>
+        <h3>AI Profiles</h3>
+        <p>Create different profiles for different accounts. Each profile has its own tone, platform, posting style, and instructions.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🔒</div>
+        <h3>Fully Private</h3>
+        <p>Everything runs on your own computer. Your content, your API keys, your data. Nothing is sent to any third-party service.</p>
+      </div>
+    </div>
+  </section>
+
+  <hr class="divider" />
+
+  <!-- How it works -->
+  <section class="section" id="how-it-works">
+    <p class="section-label">How it works</p>
+    <h2 class="section-title">From idea to post in 4 steps</h2>
+    <p class="section-sub">It is really this simple. Even if you have never used AI tools before.</p>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-number">1</div>
+        <h3>Download and set up</h3>
+        <p>Download the app and paste in your free NVIDIA and Tavily API keys. Takes about 2 minutes.</p>
+      </div>
+      <div class="step">
+        <div class="step-number">2</div>
+        <h3>Type your topic</h3>
+        <p>Just describe what you want to post about. "5 tips for waking up early" or "news about AI this week" both work.</p>
+      </div>
+      <div class="step">
+        <div class="step-number">3</div>
+        <h3>Pick your style</h3>
+        <p>Choose your platform (Instagram, LinkedIn, etc.), tone (funny, professional, casual), and how many posts you want.</p>
+      </div>
+      <div class="step">
+        <div class="step-number">4</div>
+        <h3>Generate and design</h3>
+        <p>Click Generate. Your posts appear in seconds. Send them straight to the Design Studio to make graphics and carousels.</p>
+      </div>
+    </div>
+  </section>
+
+  <hr class="divider" />
+
+  <!-- Download -->
+  <section class="section" id="download">
+    <p class="section-label">Download</p>
+    <h2 class="section-title">Get CreatorOS for free</h2>
+    <p class="section-sub">Available for Mac, Windows, and Linux. No account needed.</p>
+
+    <div class="downloads-section">
+      <div class="downloads-header">
+        <h3>Latest release</h3>
+        <p>Click your platform to download. Latest version on the Releases page.</p>
+      </div>
+      <div class="download-row">
+        <div class="platform-info">
+          <div class="platform-icon"></div>
+          <div>
+            <div class="platform-name">Mac (Apple Silicon)</div>
+            <div class="platform-note">M1, M2, M3, M4 chips</div>
+          </div>
+        </div>
+        <a class="btn-download" href="https://github.com/aspershupadhyay/elite-mode-studio/releases/latest" target="_blank">
+          Download .dmg
+        </a>
+      </div>
+      <div class="download-row">
+        <div class="platform-info">
+          <div class="platform-icon"></div>
+          <div>
+            <div class="platform-name">Mac (Intel)</div>
+            <div class="platform-note">Older Intel Macs</div>
+          </div>
+        </div>
+        <a class="btn-download" href="https://github.com/aspershupadhyay/elite-mode-studio/releases/latest" target="_blank">
+          Download .dmg
+        </a>
+      </div>
+      <div class="download-row">
+        <div class="platform-info">
+          <div class="platform-icon">🪟</div>
+          <div>
+            <div class="platform-name">Windows</div>
+            <div class="platform-note">Windows 10 or later, 64-bit</div>
+          </div>
+        </div>
+        <a class="btn-download" href="https://github.com/aspershupadhyay/elite-mode-studio/releases/latest" target="_blank">
+          Download .exe
+        </a>
+      </div>
+      <div class="download-row">
+        <div class="platform-info">
+          <div class="platform-icon">🐧</div>
+          <div>
+            <div class="platform-name">Linux</div>
+            <div class="platform-note">AppImage, runs on most distros</div>
+          </div>
+        </div>
+        <a class="btn-download" href="https://github.com/aspershupadhyay/elite-mode-studio/releases/latest" target="_blank">
+          Download .AppImage
+        </a>
+      </div>
+    </div>
+
+    <!-- Mac Gatekeeper note -->
+    <div style="max-width: 680px; margin: 20px auto 0; padding: 16px 20px; background: rgba(245,158,11,0.06); border: 1px solid rgba(245,158,11,0.15); border-radius: 12px;">
+      <p style="font-size: 13px; color: #d97706; font-weight: 500; margin-bottom: 4px;">Mac users: getting a security warning?</p>
+      <p style="font-size: 13px; color: var(--text2);">macOS may say it cannot verify the app. Just right-click the app icon in Finder and choose <strong>Open</strong>. Click Open in the popup. That is it, it will work fine after that.</p>
+    </div>
+  </section>
+
+  <hr class="divider" />
+
+  <!-- Setup -->
+  <section class="section" id="setup">
+    <p class="section-label">Setup</p>
+    <h2 class="section-title">Two free API keys required</h2>
+    <p class="section-sub">Both are free to get and take under 2 minutes to set up.</p>
+
+    <div class="setup-steps">
+      <div class="setup-card">
+        <div class="step-number">1</div>
+        <h3>NVIDIA API Key</h3>
+        <p>This powers all the AI writing. Go to <a href="https://build.nvidia.com" target="_blank">build.nvidia.com</a>, create a free account, and generate an API key. It starts with <code style="font-size:12px;color:var(--green)">nvapi-</code></p>
+      </div>
+      <div class="setup-card">
+        <div class="step-number">2</div>
+        <h3>Tavily API Key</h3>
+        <p>This lets the app search the web for fresh information. Go to <a href="https://app.tavily.com" target="_blank">app.tavily.com</a>, sign up free, and copy your key. The free plan is more than enough.</p>
+      </div>
+      <div class="setup-card">
+        <div class="step-number">3</div>
+        <h3>Paste into the app</h3>
+        <p>When you open CreatorOS for the first time it will ask for both keys. Paste them in and you are ready to go. You can update them anytime in Settings.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer>
+    <div class="nav-logo" style="justify-content: center; margin-bottom: 16px;">
+      <div class="nav-logo-mark">C</div>
+      CreatorOS
+    </div>
+    <p>Open source under the MIT License</p>
+    <p style="margin-top: 8px;">
+      <a href="https://github.com/aspershupadhyay/elite-mode-studio" target="_blank">GitHub</a>
+      &nbsp;&middot;&nbsp;
+      <a href="https://github.com/aspershupadhyay/elite-mode-studio/releases" target="_blank">Releases</a>
+      &nbsp;&middot;&nbsp;
+      <a href="https://github.com/aspershupadhyay/elite-mode-studio/issues" target="_blank">Report a bug</a>
+    </p>
+  </footer>
+
+</body>
+</html>

@@ -145,7 +145,7 @@ export default function Sidebar({ current, onNav, backendStatus, user, onLogout 
         }}
           onClick={() => collapsed && setCollapsed(false)}
         >
-          N
+          C
         </div>
 
         {/* Name + status — hidden when collapsed */}
@@ -153,7 +153,7 @@ export default function Sidebar({ current, onNav, backendStatus, user, onLogout 
           <>
             <div style={{ flex: 1, minWidth: 0 }}>
               <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', margin: 0, letterSpacing: '-0.02em', lineHeight: 1.2 }}>
-                NIM Studio
+                CreatorOS
               </p>
               <p style={{ fontSize: 10, color: 'var(--text-tertiary)', margin: 0, letterSpacing: '0.01em' }}>
                 AI Content Suite

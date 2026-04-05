@@ -43,9 +43,9 @@ const FRESHNESS_OPTIONS = [
 export interface SearchTabProps {
   config: SearchCfgSlice
   onChange: (config: SearchCfgSlice) => void
-  /** Tavily API key (lifted into parent) */
   tvKey: string
   setTvKey: (v: string) => void
+  tvKeySet: boolean
   onSaveKeys: () => void
   savingKeys: boolean
   savedKeys: boolean
@@ -58,6 +58,7 @@ export default function SearchTab({
   onChange,
   tvKey,
   setTvKey,
+  tvKeySet,
   onSaveKeys,
   savingKeys,
   savedKeys,
@@ -164,8 +165,8 @@ export default function SearchTab({
           value={tvKey}
           onChange={setTvKey}
           type="password"
-          placeholder="tvly-xxxxxxxxxxxx"
-          hint="Get yours at tavily.com — free tier is sufficient for personal use"
+          placeholder={tvKeySet ? 'Key saved - paste a new one to replace' : 'tvly-xxxxxxxxxxxx'}
+          hint="Get yours at tavily.com - free tier is sufficient for personal use"
         />
         <PrimaryBtn onClick={onSaveKeys} loading={savingKeys}>
           <Icons.check size={13} />

@@ -159,6 +159,8 @@ export default function Settings(): React.ReactElement {
   const [tab,         setTab]        = useState<TabId>('general')
   const [nvKey,       setNvKey]      = useState<string>('')
   const [tvKey,       setTvKey]      = useState<string>('')
+  const [nvKeySet,    setNvKeySet]   = useState<boolean>(false)
+  const [tvKeySet,    setTvKeySet]   = useState<boolean>(false)
   const [savingKeys,  setSavingKeys] = useState<boolean>(false)
   const [savedKeys,   setSavedKeys]  = useState<boolean>(false)
   const [health,      setHealth]     = useState<HealthData | null>(null)
@@ -188,8 +190,9 @@ export default function Settings(): React.ReactElement {
     const finish = (): void => { done++; if (done === 3) setInitialLoading(false) }
     apiFetch('/api/settings').then(({ data }) => {
       if (data) {
-        setNvKey((data as Record<string, string>).nvidia_api_key || '')
-        setTvKey((data as Record<string, string>).tavily_api_key || '')
+        const d = data as Record<string, boolean>
+        setNvKeySet(d.nvidia_api_key_set ?? false)
+        setTvKeySet(d.tavily_api_key_set ?? false)
       }
       finish()
     })
@@ -217,7 +220,10 @@ export default function Settings(): React.ReactElement {
 
   async function saveKeys(): Promise<void> {
     setSavingKeys(true)
-    await apiPost('/api/settings', { nvidia_api_key: nvKey, tavily_api_key: tvKey })
+    const body: Record<string, string> = {}
+    if (nvKey.trim()) { body.nvidia_api_key = nvKey.trim(); setNvKeySet(true); setNvKey('') }
+    if (tvKey.trim()) { body.tavily_api_key = tvKey.trim(); setTvKeySet(true); setTvKey('') }
+    await apiPost('/api/settings', body)
     setSavingKeys(false); setSavedKeys(true)
     setTimeout(() => setSavedKeys(false), 2500)
     window.dispatchEvent(new CustomEvent('storageChange'))
@@ -325,6 +331,7 @@ export default function Settings(): React.ReactElement {
             onChange={setSearchCfg as Parameters<typeof SearchTab>[0]['onChange']}
             tvKey={tvKey}
             setTvKey={setTvKey}
+            tvKeySet={tvKeySet}
             onSaveKeys={saveKeys}
             savingKeys={savingKeys}
             savedKeys={savedKeys}
@@ -334,6 +341,7 @@ export default function Settings(): React.ReactElement {
           <AIConfigTab
             nvKey={nvKey}
             setNvKey={setNvKey}
+            nvKeySet={nvKeySet}
             searchCfg={searchCfg as Parameters<typeof AIConfigTab>[0]['searchCfg']}
             setSearchCfg={setSearchCfg as Parameters<typeof AIConfigTab>[0]['setSearchCfg']}
             onSaveKeys={saveKeys}
