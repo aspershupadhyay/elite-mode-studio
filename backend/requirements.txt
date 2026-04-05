@@ -11,3 +11,6 @@ numpy
 tavily-python
 pypdf
 python-multipart
+playwright
+pillow
+opencv-python-headless

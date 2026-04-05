@@ -24,6 +24,8 @@ electron_1.contextBridge.exposeInMainWorld('api', {
     authValidate: (token) => electron_1.ipcRenderer.invoke('auth:validate', token),
     authLogout: (token) => electron_1.ipcRenderer.invoke('auth:logout', token),
     showContextMenu: (params) => electron_1.ipcRenderer.invoke('browser:context-menu', params),
+    // ── System fonts ─────────────────────────────────────────────────────────
+    getSystemFonts: () => electron_1.ipcRenderer.invoke('get-system-fonts'),
     // ── Image generation pipeline ────────────────────────────────────────────
     startImageGen: (req) => electron_1.ipcRenderer.invoke('image-gen:start', req),
     cancelImageGen: () => electron_1.ipcRenderer.invoke('image-gen:cancel'),
@@ -34,8 +36,24 @@ electron_1.contextBridge.exposeInMainWorld('api', {
     },
     getImageGenConfig: () => electron_1.ipcRenderer.invoke('image-gen:get-config'),
     setImageGenUrl: (url) => electron_1.ipcRenderer.invoke('image-gen:set-url', url),
+    // ── Read local file as base64 data URL (dev: file:// blocked by SOP) ───
+    readLocalImage: (filePath) => electron_1.ipcRenderer.invoke('read-local-image', filePath),
     // ── Terminal logging from renderer ──────────────────────────────────────
     log: (...args) => electron_1.ipcRenderer.send('renderer-log', args),
+    // ── CDN image interception — DISABLED (replaced by will-download) ────────
+    // onCdnImageCaptured: (cb: (data: { url: string; sizeBytes: number }) => void): (() => void) => {
+    //   const handler = (_: unknown, data: { url: string; sizeBytes: number }): void => cb(data)
+    //   ipcRenderer.on('cdn-image-captured', handler)
+    //   return () => ipcRenderer.removeListener('cdn-image-captured', handler)
+    // },
+    // ── Strategy A: will-download interception ───────────────────────────────
+    // Fires when main process intercepts a download via session.will-download.
+    // Provides the saved tmp file path + size in KB after the file is fully written.
+    onImageDownloadReady: (cb) => {
+        const handler = (_, data) => cb(data);
+        electron_1.ipcRenderer.on('image-download-ready', handler);
+        return () => electron_1.ipcRenderer.removeListener('image-download-ready', handler);
+    },
     onBrowserEvent: (cb) => {
         const evts = ['browser:open-new-tab', 'browser:paste', 'browser:reload', 'browser:go-back', 'browser:go-forward'];
         const handlers = evts.map(evt => {

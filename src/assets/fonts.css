@@ -1,0 +1,500 @@
+/*
+ * fonts.css — All fonts bundled locally via @fontsource / @fontsource-variable.
+ * No network requests to fonts.googleapis.com. Works fully offline + in Electron.
+ *
+ * Variable fonts   → @fontsource-variable/* (single import covers all weights)
+ * Static fonts     → @fontsource/* (one file per weight)
+ */
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   VARIABLE FONTS — Sans Serif
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* Inter */
+@import '@fontsource-variable/inter';
+@import '@fontsource-variable/inter/wght-italic.css';
+
+/* Outfit */
+@import '@fontsource-variable/outfit';
+
+/* Montserrat */
+@import '@fontsource-variable/montserrat';
+@import '@fontsource-variable/montserrat/wght-italic.css';
+
+/* Open Sans */
+@import '@fontsource-variable/open-sans';
+@import '@fontsource-variable/open-sans/wght-italic.css';
+
+/* Nunito */
+@import '@fontsource-variable/nunito';
+@import '@fontsource-variable/nunito/wght-italic.css';
+
+/* Raleway */
+@import '@fontsource-variable/raleway';
+@import '@fontsource-variable/raleway/wght-italic.css';
+
+/* Work Sans */
+@import '@fontsource-variable/work-sans';
+@import '@fontsource-variable/work-sans/wght-italic.css';
+
+/* DM Sans */
+@import '@fontsource-variable/dm-sans';
+@import '@fontsource-variable/dm-sans/wght-italic.css';
+
+/* Manrope */
+@import '@fontsource-variable/manrope';
+
+/* Plus Jakarta Sans */
+@import '@fontsource-variable/plus-jakarta-sans';
+@import '@fontsource-variable/plus-jakarta-sans/wght-italic.css';
+
+/* Space Grotesk */
+@import '@fontsource-variable/space-grotesk';
+
+/* Rubik */
+@import '@fontsource-variable/rubik';
+@import '@fontsource-variable/rubik/wght-italic.css';
+
+/* Urbanist */
+@import '@fontsource-variable/urbanist';
+@import '@fontsource-variable/urbanist/wght-italic.css';
+
+/* Lexend */
+@import '@fontsource-variable/lexend';
+
+/* Figtree */
+@import '@fontsource-variable/figtree';
+@import '@fontsource-variable/figtree/wght-italic.css';
+
+/* Instrument Sans */
+@import '@fontsource-variable/instrument-sans';
+@import '@fontsource-variable/instrument-sans/wght-italic.css';
+
+/* Epilogue */
+@import '@fontsource-variable/epilogue';
+@import '@fontsource-variable/epilogue/wght-italic.css';
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   VARIABLE FONTS — Display
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* Oswald */
+@import '@fontsource-variable/oswald';
+
+/* Orbitron */
+@import '@fontsource-variable/orbitron';
+
+/* Big Shoulders Display */
+@import '@fontsource-variable/big-shoulders-display';
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   VARIABLE FONTS — Serif
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* Playfair Display */
+@import '@fontsource-variable/playfair-display';
+@import '@fontsource-variable/playfair-display/wght-italic.css';
+
+/* Lora */
+@import '@fontsource-variable/lora';
+@import '@fontsource-variable/lora/wght-italic.css';
+
+/* Fraunces */
+@import '@fontsource-variable/fraunces';
+@import '@fontsource-variable/fraunces/wght-italic.css';
+
+/* Crimson Pro */
+@import '@fontsource-variable/crimson-pro';
+@import '@fontsource-variable/crimson-pro/wght-italic.css';
+
+/* Bitter */
+@import '@fontsource-variable/bitter';
+@import '@fontsource-variable/bitter/wght-italic.css';
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   VARIABLE FONTS — Monospace
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* JetBrains Mono */
+@import '@fontsource-variable/jetbrains-mono';
+@import '@fontsource-variable/jetbrains-mono/wght-italic.css';
+
+/* Fira Code */
+@import '@fontsource-variable/fira-code';
+
+/* Source Code Pro */
+@import '@fontsource-variable/source-code-pro';
+@import '@fontsource-variable/source-code-pro/wght-italic.css';
+
+/* Inconsolata */
+@import '@fontsource-variable/inconsolata';
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   VARIABLE FONTS — Handwriting
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* Caveat */
+@import '@fontsource-variable/caveat';
+
+/* Dancing Script */
+@import '@fontsource-variable/dancing-script';
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   STATIC FONTS — Sans Serif
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Poppins */
+@import '@fontsource/poppins/300.css';
+@import '@fontsource/poppins/400.css';
+@import '@fontsource/poppins/500.css';
+@import '@fontsource/poppins/600.css';
+@import '@fontsource/poppins/700.css';
+@import '@fontsource/poppins/800.css';
+@import '@fontsource/poppins/900.css';
+@import '@fontsource/poppins/300-italic.css';
+@import '@fontsource/poppins/400-italic.css';
+@import '@fontsource/poppins/500-italic.css';
+@import '@fontsource/poppins/600-italic.css';
+@import '@fontsource/poppins/700-italic.css';
+@import '@fontsource/poppins/800-italic.css';
+@import '@fontsource/poppins/900-italic.css';
+
+/* Roboto */
+@import '@fontsource/roboto/300.css';
+@import '@fontsource/roboto/400.css';
+@import '@fontsource/roboto/500.css';
+@import '@fontsource/roboto/700.css';
+@import '@fontsource/roboto/900.css';
+@import '@fontsource/roboto/300-italic.css';
+@import '@fontsource/roboto/400-italic.css';
+@import '@fontsource/roboto/500-italic.css';
+@import '@fontsource/roboto/700-italic.css';
+@import '@fontsource/roboto/900-italic.css';
+
+/* Lato */
+@import '@fontsource/lato/300.css';
+@import '@fontsource/lato/400.css';
+@import '@fontsource/lato/700.css';
+@import '@fontsource/lato/900.css';
+@import '@fontsource/lato/300-italic.css';
+@import '@fontsource/lato/400-italic.css';
+@import '@fontsource/lato/700-italic.css';
+@import '@fontsource/lato/900-italic.css';
+
+/* Sora */
+@import '@fontsource/sora/300.css';
+@import '@fontsource/sora/400.css';
+@import '@fontsource/sora/500.css';
+@import '@fontsource/sora/600.css';
+@import '@fontsource/sora/700.css';
+@import '@fontsource/sora/800.css';
+
+/* Geist */
+@import '@fontsource/geist/300.css';
+@import '@fontsource/geist/400.css';
+@import '@fontsource/geist/500.css';
+@import '@fontsource/geist/600.css';
+@import '@fontsource/geist/700.css';
+@import '@fontsource/geist/800.css';
+@import '@fontsource/geist/900.css';
+
+/* Be Vietnam Pro */
+@import '@fontsource/be-vietnam-pro/300.css';
+@import '@fontsource/be-vietnam-pro/400.css';
+@import '@fontsource/be-vietnam-pro/500.css';
+@import '@fontsource/be-vietnam-pro/600.css';
+@import '@fontsource/be-vietnam-pro/700.css';
+@import '@fontsource/be-vietnam-pro/800.css';
+@import '@fontsource/be-vietnam-pro/900.css';
+@import '@fontsource/be-vietnam-pro/300-italic.css';
+@import '@fontsource/be-vietnam-pro/400-italic.css';
+@import '@fontsource/be-vietnam-pro/500-italic.css';
+@import '@fontsource/be-vietnam-pro/600-italic.css';
+@import '@fontsource/be-vietnam-pro/700-italic.css';
+@import '@fontsource/be-vietnam-pro/800-italic.css';
+@import '@fontsource/be-vietnam-pro/900-italic.css';
+
+/* Schibsted Grotesk */
+@import '@fontsource/schibsted-grotesk/400.css';
+@import '@fontsource/schibsted-grotesk/500.css';
+@import '@fontsource/schibsted-grotesk/600.css';
+@import '@fontsource/schibsted-grotesk/700.css';
+@import '@fontsource/schibsted-grotesk/800.css';
+@import '@fontsource/schibsted-grotesk/900.css';
+@import '@fontsource/schibsted-grotesk/400-italic.css';
+@import '@fontsource/schibsted-grotesk/500-italic.css';
+@import '@fontsource/schibsted-grotesk/600-italic.css';
+@import '@fontsource/schibsted-grotesk/700-italic.css';
+@import '@fontsource/schibsted-grotesk/800-italic.css';
+@import '@fontsource/schibsted-grotesk/900-italic.css';
+
+/* Onest */
+@import '@fontsource/onest/300.css';
+@import '@fontsource/onest/400.css';
+@import '@fontsource/onest/500.css';
+@import '@fontsource/onest/600.css';
+@import '@fontsource/onest/700.css';
+@import '@fontsource/onest/800.css';
+@import '@fontsource/onest/900.css';
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   STATIC FONTS — Display
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Bebas Neue */
+@import '@fontsource/bebas-neue/400.css';
+
+/* Anton */
+@import '@fontsource/anton/400.css';
+
+/* Righteous */
+@import '@fontsource/righteous/400.css';
+
+/* Black Ops One */
+@import '@fontsource/black-ops-one/400.css';
+
+/* Russo One */
+@import '@fontsource/russo-one/400.css';
+
+/* Chakra Petch */
+@import '@fontsource/chakra-petch/300.css';
+@import '@fontsource/chakra-petch/400.css';
+@import '@fontsource/chakra-petch/500.css';
+@import '@fontsource/chakra-petch/600.css';
+@import '@fontsource/chakra-petch/700.css';
+@import '@fontsource/chakra-petch/300-italic.css';
+@import '@fontsource/chakra-petch/400-italic.css';
+@import '@fontsource/chakra-petch/500-italic.css';
+@import '@fontsource/chakra-petch/600-italic.css';
+@import '@fontsource/chakra-petch/700-italic.css';
+
+/* Archivo Black */
+@import '@fontsource/archivo-black/400.css';
+
+/* Bungee */
+@import '@fontsource/bungee/400.css';
+
+/* Teko */
+@import '@fontsource/teko/300.css';
+@import '@fontsource/teko/400.css';
+@import '@fontsource/teko/500.css';
+@import '@fontsource/teko/600.css';
+@import '@fontsource/teko/700.css';
+
+/* Barlow Condensed */
+@import '@fontsource/barlow-condensed/300.css';
+@import '@fontsource/barlow-condensed/400.css';
+@import '@fontsource/barlow-condensed/500.css';
+@import '@fontsource/barlow-condensed/600.css';
+@import '@fontsource/barlow-condensed/700.css';
+@import '@fontsource/barlow-condensed/800.css';
+@import '@fontsource/barlow-condensed/900.css';
+@import '@fontsource/barlow-condensed/300-italic.css';
+@import '@fontsource/barlow-condensed/400-italic.css';
+@import '@fontsource/barlow-condensed/500-italic.css';
+@import '@fontsource/barlow-condensed/600-italic.css';
+@import '@fontsource/barlow-condensed/700-italic.css';
+@import '@fontsource/barlow-condensed/800-italic.css';
+@import '@fontsource/barlow-condensed/900-italic.css';
+
+/* Saira Condensed */
+@import '@fontsource/saira-condensed/300.css';
+@import '@fontsource/saira-condensed/400.css';
+@import '@fontsource/saira-condensed/500.css';
+@import '@fontsource/saira-condensed/600.css';
+@import '@fontsource/saira-condensed/700.css';
+@import '@fontsource/saira-condensed/800.css';
+@import '@fontsource/saira-condensed/900.css';
+
+/* Exo 2 */
+@import '@fontsource/exo-2/300.css';
+@import '@fontsource/exo-2/400.css';
+@import '@fontsource/exo-2/500.css';
+@import '@fontsource/exo-2/600.css';
+@import '@fontsource/exo-2/700.css';
+@import '@fontsource/exo-2/800.css';
+@import '@fontsource/exo-2/900.css';
+@import '@fontsource/exo-2/300-italic.css';
+@import '@fontsource/exo-2/400-italic.css';
+@import '@fontsource/exo-2/500-italic.css';
+@import '@fontsource/exo-2/600-italic.css';
+@import '@fontsource/exo-2/700-italic.css';
+@import '@fontsource/exo-2/800-italic.css';
+@import '@fontsource/exo-2/900-italic.css';
+
+/* Bai Jamjuree */
+@import '@fontsource/bai-jamjuree/300.css';
+@import '@fontsource/bai-jamjuree/400.css';
+@import '@fontsource/bai-jamjuree/500.css';
+@import '@fontsource/bai-jamjuree/600.css';
+@import '@fontsource/bai-jamjuree/700.css';
+
+/* Syncopate */
+@import '@fontsource/syncopate/400.css';
+@import '@fontsource/syncopate/700.css';
+
+/* Squada One */
+@import '@fontsource/squada-one/400.css';
+
+/* Audiowide */
+@import '@fontsource/audiowide/400.css';
+
+/* Rajdhani */
+@import '@fontsource/rajdhani/300.css';
+@import '@fontsource/rajdhani/400.css';
+@import '@fontsource/rajdhani/500.css';
+@import '@fontsource/rajdhani/600.css';
+@import '@fontsource/rajdhani/700.css';
+
+/* Play */
+@import '@fontsource/play/400.css';
+@import '@fontsource/play/700.css';
+
+/* Michroma */
+@import '@fontsource/michroma/400.css';
+
+/* Plaster */
+@import '@fontsource/plaster/400.css';
+
+/* Handjet */
+@import '@fontsource/handjet/100.css';
+@import '@fontsource/handjet/200.css';
+@import '@fontsource/handjet/300.css';
+@import '@fontsource/handjet/400.css';
+@import '@fontsource/handjet/500.css';
+@import '@fontsource/handjet/600.css';
+@import '@fontsource/handjet/700.css';
+@import '@fontsource/handjet/800.css';
+@import '@fontsource/handjet/900.css';
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   STATIC FONTS — Serif
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Merriweather */
+@import '@fontsource/merriweather/300.css';
+@import '@fontsource/merriweather/400.css';
+@import '@fontsource/merriweather/700.css';
+@import '@fontsource/merriweather/900.css';
+@import '@fontsource/merriweather/300-italic.css';
+@import '@fontsource/merriweather/400-italic.css';
+@import '@fontsource/merriweather/700-italic.css';
+@import '@fontsource/merriweather/900-italic.css';
+
+/* Cormorant Garamond */
+@import '@fontsource/cormorant-garamond/300.css';
+@import '@fontsource/cormorant-garamond/400.css';
+@import '@fontsource/cormorant-garamond/500.css';
+@import '@fontsource/cormorant-garamond/600.css';
+@import '@fontsource/cormorant-garamond/700.css';
+@import '@fontsource/cormorant-garamond/300-italic.css';
+@import '@fontsource/cormorant-garamond/400-italic.css';
+@import '@fontsource/cormorant-garamond/500-italic.css';
+@import '@fontsource/cormorant-garamond/600-italic.css';
+@import '@fontsource/cormorant-garamond/700-italic.css';
+
+/* DM Serif Display */
+@import '@fontsource/dm-serif-display/400.css';
+
+/* EB Garamond */
+@import '@fontsource/eb-garamond/400.css';
+@import '@fontsource/eb-garamond/500.css';
+@import '@fontsource/eb-garamond/600.css';
+@import '@fontsource/eb-garamond/700.css';
+@import '@fontsource/eb-garamond/800.css';
+@import '@fontsource/eb-garamond/400-italic.css';
+@import '@fontsource/eb-garamond/500-italic.css';
+@import '@fontsource/eb-garamond/600-italic.css';
+@import '@fontsource/eb-garamond/700-italic.css';
+@import '@fontsource/eb-garamond/800-italic.css';
+
+/* Spectral */
+@import '@fontsource/spectral/300.css';
+@import '@fontsource/spectral/400.css';
+@import '@fontsource/spectral/500.css';
+@import '@fontsource/spectral/600.css';
+@import '@fontsource/spectral/700.css';
+@import '@fontsource/spectral/800.css';
+@import '@fontsource/spectral/300-italic.css';
+@import '@fontsource/spectral/400-italic.css';
+@import '@fontsource/spectral/500-italic.css';
+@import '@fontsource/spectral/600-italic.css';
+@import '@fontsource/spectral/700-italic.css';
+@import '@fontsource/spectral/800-italic.css';
+
+/* Libre Baskerville */
+@import '@fontsource/libre-baskerville/400.css';
+@import '@fontsource/libre-baskerville/700.css';
+@import '@fontsource/libre-baskerville/400-italic.css';
+
+/* Instrument Serif */
+@import '@fontsource/instrument-serif/400.css';
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   STATIC FONTS — Monospace
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Space Mono */
+@import '@fontsource/space-mono/400.css';
+@import '@fontsource/space-mono/700.css';
+
+/* IBM Plex Mono */
+@import '@fontsource/ibm-plex-mono/300.css';
+@import '@fontsource/ibm-plex-mono/400.css';
+@import '@fontsource/ibm-plex-mono/500.css';
+@import '@fontsource/ibm-plex-mono/600.css';
+@import '@fontsource/ibm-plex-mono/700.css';
+@import '@fontsource/ibm-plex-mono/300-italic.css';
+@import '@fontsource/ibm-plex-mono/400-italic.css';
+@import '@fontsource/ibm-plex-mono/500-italic.css';
+@import '@fontsource/ibm-plex-mono/600-italic.css';
+@import '@fontsource/ibm-plex-mono/700-italic.css';
+
+/* Courier Prime */
+@import '@fontsource/courier-prime/400.css';
+@import '@fontsource/courier-prime/700.css';
+@import '@fontsource/courier-prime/400-italic.css';
+@import '@fontsource/courier-prime/700-italic.css';
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   STATIC FONTS — Handwriting
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Pacifico */
+@import '@fontsource/pacifico/400.css';
+
+/* Permanent Marker */
+@import '@fontsource/permanent-marker/400.css';
+
+/* Sacramento */
+@import '@fontsource/sacramento/400.css';
+
+/* Satisfy */
+@import '@fontsource/satisfy/400.css';
+
+/* Great Vibes */
+@import '@fontsource/great-vibes/400.css';
+
+/* Kalam */
+@import '@fontsource/kalam/300.css';
+@import '@fontsource/kalam/400.css';
+@import '@fontsource/kalam/700.css';
+
+/* Amatic SC */
+@import '@fontsource/amatic-sc/400.css';
+@import '@fontsource/amatic-sc/700.css';
+
+/* Indie Flower */
+@import '@fontsource/indie-flower/400.css';
+
+/* Shadows Into Light */
+@import '@fontsource/shadows-into-light/400.css';
+
+/* Courgette */
+@import '@fontsource/courgette/400.css';
+
+/* Lobster */
+@import '@fontsource/lobster/400.css';
+
+/* Yellowtail */
+@import '@fontsource/yellowtail/400.css';

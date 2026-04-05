@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "CommonJS",
+    "moduleResolution": "node",
+    "lib": ["ES2020"],
+    "strict": true,
+    "noImplicitReturns": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "outDir": ".",
+    "rootDir": "."
+  },
+  "include": ["main.ts", "preload.ts", "src/pages/browser/automation/**/*.ts"],
+  "exclude": ["node_modules", "dist", "src"]
+}

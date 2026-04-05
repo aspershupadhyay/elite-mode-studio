@@ -1,0 +1,27 @@
+export interface CanvasPreset {
+  id: string
+  label: string
+  width: number
+  height: number
+  ratio?: string
+  category?: string
+}
+
+export const CANVAS_SIZES: CanvasPreset[] = [
+  { id: 'ig-feed',      label: 'IG Feed Post',        width: 1080, height: 1350, ratio: '4:5',    category: 'Instagram' },
+  { id: 'ig-square',    label: 'IG Square Post',       width: 1080, height: 1080, ratio: '1:1',    category: 'Instagram' },
+  { id: 'ig-story',     label: 'IG Story / Reel',      width: 1080, height: 1920, ratio: '9:16',   category: 'Instagram' },
+  { id: 'ig-landscape', label: 'IG Landscape',         width: 1080, height: 566,  ratio: '1.91:1', category: 'Instagram' },
+  { id: 'ig-carousel',  label: 'IG Carousel Slide',    width: 1080, height: 1080, ratio: '1:1',    category: 'Instagram' },
+  { id: 'yt-thumb',     label: 'YouTube Thumbnail',    width: 1280, height: 720,  ratio: '16:9',   category: 'YouTube' },
+  { id: 'yt-banner',    label: 'YouTube Banner',       width: 2560, height: 1440, ratio: '16:9',   category: 'YouTube' },
+  { id: 'x-post',       label: 'X Post Image',         width: 1200, height: 675,  ratio: '16:9',   category: 'Twitter / X' },
+  { id: 'x-header',     label: 'X Header',             width: 1500, height: 500,  ratio: '3:1',    category: 'Twitter / X' },
+  { id: 'li-post',      label: 'LinkedIn Post',        width: 1200, height: 627,  ratio: '1.91:1', category: 'LinkedIn' },
+  { id: 'li-cover',     label: 'LinkedIn Cover',       width: 1584, height: 396,  ratio: '4:1',    category: 'LinkedIn' },
+  { id: 'fb-post',      label: 'Facebook Post',        width: 1200, height: 630,  ratio: '1.91:1', category: 'Facebook' },
+  { id: 'fb-cover',     label: 'Facebook Cover',       width: 820,  height: 312,  ratio: '2.63:1', category: 'Facebook' },
+  { id: 'pin-standard', label: 'Pinterest Pin',        width: 1000, height: 1500, ratio: '2:3',    category: 'Pinterest' },
+  { id: 'a4-portrait',  label: 'A4 Portrait',          width: 2480, height: 3508, ratio: 'A4',     category: 'Print' },
+  { id: 'a4-landscape', label: 'A4 Landscape',         width: 3508, height: 2480, ratio: 'A4',     category: 'Print' },
+]

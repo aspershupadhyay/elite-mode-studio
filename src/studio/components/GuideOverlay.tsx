@@ -14,13 +14,6 @@ interface SnapLine {
   label?: string
 }
 
-interface TooltipData {
-  x: number
-  y: number
-  w: number
-  h: number
-}
-
 interface NearbyDistance {
   val: number
   type: 'h' | 'v'
@@ -37,7 +30,7 @@ export interface GuideData {
   _originY?: number
   vLines?: SnapLine[]
   hLines?: SnapLine[]
-  tooltip?: TooltipData
+  tooltip?: { x: number; y: number; w: number; h: number }
   nearbyDistances?: NearbyDistance[]
   mode?: string
 }
@@ -79,56 +72,7 @@ export default function GuideOverlay({ guides, zoom, canvasW, canvasH }: GuideOv
   const cvx = (cx: number): number => ox + cx * zoom
   const cvy = (cy: number): number => oy + cy * zoom
 
-  const { vLines = [], hLines = [], tooltip, nearbyDistances = [] } = guides
-  const isResize = guides.mode === 'resize'
-
-  // Tooltip: show W×H during resize, X Y during move
-  const tipLabel = tooltip
-    ? isResize
-      ? `${tooltip.w} × ${tooltip.h}`
-      : `X ${tooltip.x}  Y ${tooltip.y}`
-    : null
-  const tipX = tooltip ? Math.max(4, cvx(tooltip.x + tooltip.w / 2) - 40) : 0
-  const tipY = tooltip ? Math.max(4, cvy(tooltip.y) - 28) : 0
-
-  // Edge distances — only show when snapping to a canvas edge (not always)
-  const edgeMeasurements: Array<
-    | { type: 'h'; x1: number; x2: number; y: number; val: number }
-    | { type: 'v'; y1: number; y2: number; x: number; val: number }
-  > = []
-
-  // Only show edge distances when object is snapping to a canvas edge/center
-  if (tooltip && !isResize) {
-    const { x, y, w, h } = tooltip
-    const objL = cvx(x),     objR = cvx(x + w)
-    const objT = cvy(y),     objB = cvy(y + h)
-    const canL = cvx(0),     canR = cvx(canvasW)
-    const canT = cvy(0),     canBo = cvy(canvasH)
-    const midY = (objT + objB) / 2
-    const midX = (objL + objR) / 2
-
-    // Check if we're snapping to a vertical canvas guide
-    const snappingToVGuide = vLines.some(l => {
-      const label = l.label || ''
-      return label.includes('edge') || label === 'Center' || label.includes('/3')
-    })
-    // Check if we're snapping to a horizontal canvas guide
-    const snappingToHGuide = hLines.some(l => {
-      const label = l.label || ''
-      return label.includes('edge') || label === 'Center' || label.includes('/3')
-    })
-
-    // Only show left/right edge distance when snapping vertically (to a vertical guide)
-    if (snappingToVGuide) {
-      if (x > 2)               edgeMeasurements.push({ type: 'h', x1: canL,  x2: objL, y: midY, val: Math.round(x) })
-      if (x + w < canvasW - 2) edgeMeasurements.push({ type: 'h', x1: objR,  x2: canR, y: midY, val: Math.round(canvasW - x - w) })
-    }
-    // Only show top/bottom edge distance when snapping horizontally
-    if (snappingToHGuide) {
-      if (y > 2)               edgeMeasurements.push({ type: 'v', y1: canT,  y2: objT, x: midX, val: Math.round(y) })
-      if (y + h < canvasH - 2) edgeMeasurements.push({ type: 'v', y1: objB,  y2: canBo, x: midX, val: Math.round(canvasH - y - h) })
-    }
-  }
+  const { vLines = [], hLines = [], nearbyDistances = [] } = guides
 
   return (
     <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 50 }}>
@@ -149,39 +93,6 @@ export default function GuideOverlay({ guides, zoom, canvasW, canvasH }: GuideOv
             <line key={`sh${i}`} x1={cvx(0)} y1={y} x2={cvx(canvasW)} y2={y}
               stroke={GUIDE_COLOR} strokeWidth={1} opacity={0.8}/>
           )
-        })}
-
-        {/* Canvas-edge distance measurements — only when snapping to canvas guides */}
-        {edgeMeasurements.map((m, i) => {
-          if (m.type === 'h') {
-            const len = Math.abs(m.x2 - m.x1)
-            if (len < 10) return null
-            return (
-              <g key={`em${i}`}>
-                <line x1={m.x1} y1={m.y} x2={m.x2} y2={m.y}
-                  stroke={GUIDE_COLOR} strokeWidth={0.7} strokeDasharray="4 3" opacity={0.5}/>
-                <line x1={m.x1} y1={m.y - 4} x2={m.x1} y2={m.y + 4}
-                  stroke={GUIDE_COLOR} strokeWidth={0.7} opacity={0.5}/>
-                <line x1={m.x2} y1={m.y - 4} x2={m.x2} y2={m.y + 4}
-                  stroke={GUIDE_COLOR} strokeWidth={0.7} opacity={0.5}/>
-                <MeasBadge cx={(m.x1 + m.x2) / 2} cy={m.y} val={m.val}/>
-              </g>
-            )
-          } else {
-            const len = Math.abs(m.y2 - m.y1)
-            if (len < 10) return null
-            return (
-              <g key={`em${i}`}>
-                <line x1={m.x} y1={m.y1} x2={m.x} y2={m.y2}
-                  stroke={GUIDE_COLOR} strokeWidth={0.7} strokeDasharray="4 3" opacity={0.5}/>
-                <line x1={m.x - 4} y1={m.y1} x2={m.x + 4} y2={m.y1}
-                  stroke={GUIDE_COLOR} strokeWidth={0.7} opacity={0.5}/>
-                <line x1={m.x - 4} y1={m.y2} x2={m.x + 4} y2={m.y2}
-                  stroke={GUIDE_COLOR} strokeWidth={0.7} opacity={0.5}/>
-                <MeasBadge cx={m.x} cy={(m.y1 + m.y2) / 2} val={m.val}/>
-              </g>
-            )
-          }
         })}
 
         {/* Object-to-object gap measurements — always show when nearby */}
@@ -225,22 +136,6 @@ export default function GuideOverlay({ guides, zoom, canvasW, canvasH }: GuideOv
         })}
       </svg>
 
-      {/* Position / size tooltip */}
-      {tipLabel && (
-        <div style={{
-          position: 'absolute', left: tipX, top: tipY,
-          background: 'rgba(10,10,15,0.92)',
-          border: '1px solid rgba(255,255,255,0.1)',
-          color: '#e2e8f0',
-          fontSize: 10, fontFamily: 'SF Mono, JetBrains Mono, monospace', fontWeight: 600,
-          padding: '3px 8px', borderRadius: 5,
-          whiteSpace: 'nowrap', pointerEvents: 'none', zIndex: 60,
-          backdropFilter: 'blur(6px)',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
-        }}>
-          {tipLabel}
-        </div>
-      )}
     </div>
   )
 }

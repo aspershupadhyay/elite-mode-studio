@@ -2,12 +2,17 @@ from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 import tempfile, os, logging, asyncio
 from rag import NvidiaRAG, TRENDING_QUERIES, FRESHNESS_CONFIG, classify_error, load_search_config, save_search_config, DOCS_DIR
 from config import NVIDIA_API_KEY, TAVILY_API_KEY, LLM_MODEL, EMBED_MODEL, RERANK_MODEL
 from dotenv import load_dotenv, set_key
 import storage
+import database
+import auth
+import auth_db
+import time as _time
+from fastapi import Header
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
@@ -31,6 +36,9 @@ pipeline: Optional[NvidiaRAG] = None
 @app.on_event("startup")
 def startup():
     global pipeline
+    database.init_db()
+    auth_db.init_auth_db()
+    log.info("Database initialised.")
     log.info("Initializing pipeline...")
     try:
         pipeline = NvidiaRAG()
@@ -80,7 +88,7 @@ class OutputConfigBody(BaseModel):
 
 class BatchBody(BaseModel):
     category: str
-    count: Optional[int] = 3
+    count: int = 3
     include_9x16: Optional[bool] = False
     include_hook: Optional[bool] = False
     include_category: Optional[bool] = False
@@ -97,6 +105,44 @@ class SettingsBody(BaseModel):
 class SearchConfigBody(BaseModel):
     tavily: Optional[dict] = None
     nvidia: Optional[dict] = None
+
+class OutputFieldBody(BaseModel):
+    """Single output field definition sent from the frontend profile."""
+    id:      str
+    label:   str
+    type:    str             = "text"
+    aiHint:  Optional[str]  = ""
+    enabled: bool            = True
+
+class GenerateBody(BaseModel):
+    """Universal single-post generation request — fully profile-driven."""
+    topic:               str
+    system_prompt:       Optional[str]                 = ""
+    output_fields:       Optional[List[OutputFieldBody]] = None
+    tone:                Optional[str]                 = ""
+    language:            Optional[str]                 = "en"
+    post_count:          Optional[int]                 = 1
+    search_enabled:      Optional[bool]                = True
+    custom_instructions: Optional[str]                 = ""
+    freshness:           Optional[str]                 = "2days"
+    title_min_length:    Optional[int]                 = 60
+    title_max_length:    Optional[int]                 = 110
+
+class StreamBody(BaseModel):
+    """Universal streaming batch request — fully profile-driven."""
+    category:            str
+    count:               int                            = 3
+    topics:              Optional[List[str]]            = None
+    system_prompt:       Optional[str]                 = ""
+    output_fields:       Optional[List[OutputFieldBody]] = None
+    tone:                Optional[str]                 = ""
+    language:            Optional[str]                 = "en"
+    search_enabled:      Optional[bool]                = True
+    search_mode:         Optional[str]                 = "news"   # "news" | "general"
+    custom_instructions: Optional[str]                 = ""
+    freshness:           Optional[str]                 = "2days"
+    title_min_length:    Optional[int]                 = 60
+    title_max_length:    Optional[int]                 = 110
 
 def err(e: Exception, status: int = 500):
     log.error("API error: %s", e)
@@ -140,11 +186,21 @@ def get_settings():
 
 @app.post("/api/settings")
 def save_settings(body: SettingsBody):
+    global pipeline
     env_path = os.path.join(os.path.dirname(__file__), ".env")
     set_key(env_path, "NVIDIA_API_KEY", body.nvidia_api_key)
     set_key(env_path, "TAVILY_API_KEY", body.tavily_api_key)
+    # Reload env vars so os.getenv picks up the new values immediately
     load_dotenv(env_path, override=True)
-    return {"status": "saved", "message": "Keys saved. Restart backend for changes to take effect."}
+    # Reinitialize the pipeline so the new keys are used by all LangChain clients
+    try:
+        pipeline = NvidiaRAG()
+        log.info("Pipeline reinitialized with updated API keys.")
+    except Exception as e:
+        log.error("Pipeline reinit failed after key update: %s", e)
+        pipeline = None
+        raise HTTPException(status_code=500, detail=f"Keys saved but pipeline failed to reinitialize: {e}")
+    return {"status": "saved", "message": "Keys saved and pipeline reloaded — no restart needed."}
 
 @app.get("/api/freshness/options")
 def freshness_options():
@@ -184,6 +240,79 @@ def ask_doc(body: AskBody):
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e: err(e)
 
+@app.post("/api/content/generate")
+def generate_content(body: GenerateBody):
+    """Profile-driven single post generation. Zero hardcoding."""
+    if not body.topic.strip():
+        raise HTTPException(status_code=400, detail="Topic cannot be empty.")
+    freshness = body.freshness or "2days"
+    if freshness not in FRESHNESS_CONFIG:
+        raise HTTPException(status_code=400, detail=f"Invalid freshness. Use: {list(FRESHNESS_CONFIG.keys())}")
+    try:
+        p = get_pipeline()
+        fields = [f.dict() for f in (body.output_fields or [])]
+        result = p.generate_content(
+            topic               = body.topic,
+            system_prompt       = body.system_prompt or "",
+            output_fields       = fields,
+            tone                = body.tone or "",
+            language            = body.language or "en",
+            post_count          = body.post_count or 1,
+            search_enabled      = body.search_enabled if body.search_enabled is not None else True,
+            custom_instructions = body.custom_instructions or "",
+            freshness           = freshness,
+            title_min_length    = body.title_min_length or 60,
+            title_max_length    = body.title_max_length or 110,
+        )
+        post_id = storage.save_post(body.topic, "content", result["content"], result["sources"])
+        result["post_id"] = post_id
+        return result
+    except Exception as e: err(e)
+
+
+@app.post("/api/content/stream")
+async def stream_content(body: StreamBody):
+    """Profile-driven SSE streaming batch. Zero hardcoding."""
+    freshness = body.freshness or "2days"
+    if freshness not in FRESHNESS_CONFIG:
+        raise HTTPException(status_code=400, detail="Invalid freshness value.")
+    p = get_pipeline()
+    fields = [f.dict() for f in (body.output_fields or [])]
+    # Inject profile fields onto pipeline instance for the batch (thread-safe per request)
+    p._batch_output_fields       = fields if fields else None
+    p._batch_system_prompt       = body.system_prompt or ""
+    p._batch_tone                = body.tone or ""
+    p._batch_custom_instructions = body.custom_instructions or ""
+    p._batch_title_min_length    = body.title_min_length or 60
+    p._batch_title_max_length    = body.title_max_length or 110
+    p._batch_search_mode         = body.search_mode or "news"
+
+    async def event_generator():
+        try:
+            async for chunk in p.stream_batch_generate(
+                category            = body.category,
+                count               = body.count,
+                topics              = body.topics or None,
+                freshness           = freshness,
+                tone                = body.tone or "",
+                custom_instructions = body.custom_instructions or "",
+            ):
+                yield chunk
+        except asyncio.CancelledError:
+            log.info("SSE stream cancelled by client.")
+            raise
+        except Exception as e:
+            import json as _json
+            yield f"data: {_json.dumps({'type': 'post_error', 'post_index': -1, 'error': classify_error(e)})}\n\n"
+            yield 'data: {"type": "batch_done"}\n\n'
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
+    )
+
+
 @app.post("/api/content/instagram")
 def generate_instagram(body: InstagramBody):
     if not body.topic.strip():
@@ -210,8 +339,8 @@ def generate_instagram(body: InstagramBody):
 
 @app.post("/api/content/batch")
 def batch_generate(body: BatchBody):
-    if body.count < 1 or body.count > 5:
-        raise HTTPException(status_code=400, detail="Count must be between 1 and 5.")
+    if body.count < 1 or body.count < 1:
+        raise HTTPException(status_code=400, detail="Count must be at least 1.")
     if body.freshness not in FRESHNESS_CONFIG:
         raise HTTPException(status_code=400, detail=f"Invalid freshness value.")
     try:
@@ -233,12 +362,20 @@ def batch_generate(body: BatchBody):
     except Exception as e: err(e)
 
 class StreamBatchBody(BaseModel):
-    category:         str
-    count:            Optional[int]  = 3
-    include_9x16:     Optional[bool] = False
-    include_hook:     Optional[bool] = False
-    include_category: Optional[bool] = False
-    freshness:        Optional[str]  = "2days"
+    category:            str
+    count:               int  = 3
+    topics:              Optional[List[str]] = None  # custom topics bypass trending fetch
+    include_9x16:        Optional[bool] = False
+    include_hook:        Optional[bool] = False
+    include_category:    Optional[bool] = False
+    freshness:           Optional[str]  = "2days"
+    persona:             Optional[str]  = "journalist"
+    tone:                Optional[str]  = "analytical"
+    platform_target:     Optional[str]  = "instagram"
+    caption_length:      Optional[str]  = "medium"
+    custom_instructions: Optional[str]  = ""
+    title_min_length:    Optional[int]  = 50
+    title_max_length:    Optional[int]  = 100
 
 @app.post("/api/content/stream-batch")
 async def stream_batch(body: StreamBatchBody):
@@ -246,8 +383,8 @@ async def stream_batch(body: StreamBatchBody):
     SSE endpoint — streams N posts live as they are generated.
     Events: campaign_brief | post_started | web_fetched | post_chunk | post_completed | post_error | batch_done
     """
-    if body.count < 1 or body.count > 5:
-        raise HTTPException(status_code=400, detail="Count must be between 1 and 5.")
+    if body.count < 1 or body.count < 1:
+        raise HTTPException(status_code=400, detail="Count must be at least 1.")
     if body.freshness not in FRESHNESS_CONFIG:
         raise HTTPException(status_code=400, detail="Invalid freshness value.")
 
@@ -256,12 +393,20 @@ async def stream_batch(body: StreamBatchBody):
     async def event_generator():
         try:
             async for chunk in p.stream_batch_generate(
-                category         = body.category,
-                count            = body.count,
-                include_9x16     = body.include_9x16,
-                include_hook     = body.include_hook,
-                include_category = body.include_category,
-                freshness        = body.freshness,
+                category            = body.category,
+                count               = body.count,
+                topics              = body.topics or None,
+                include_9x16        = body.include_9x16,
+                include_hook        = body.include_hook,
+                include_category    = body.include_category,
+                freshness           = body.freshness,
+                persona             = body.persona or "journalist",
+                tone                = body.tone or "analytical",
+                platform_target     = body.platform_target or "instagram",
+                caption_length      = body.caption_length or "medium",
+                custom_instructions = body.custom_instructions or "",
+                title_min_length    = body.title_min_length or 50,
+                title_max_length    = body.title_max_length or 100,
             ):
                 yield chunk
         except asyncio.CancelledError:
@@ -293,7 +438,7 @@ def get_trending(body: TrendingBody):
 
 @app.get("/api/trending/categories")
 def trending_categories():
-    return {"categories": list(TRENDING_QUERIES.keys())}
+    return {"categories": sorted(TRENDING_QUERIES.keys())}
 
 @app.get("/api/search-config")
 def get_search_config():
@@ -365,6 +510,67 @@ def save_persona_config(body: PersonaConfigBody):
     save_search_config(cfg)
     return {"status": "saved"}
 
+# ── Output schema routes ──────────────────────────────────────────────────────
+
+class SchemaFieldBody(BaseModel):
+    id: str
+    label: str
+    key: str
+    instruction: str
+    type: str
+    enabled: bool
+
+class OutputSchemaBody(BaseModel):
+    name: str
+    fields: List[SchemaFieldBody]
+    platform: Optional[str] = "instagram"
+
+@app.get("/api/output-schemas")
+def list_output_schemas():
+    return {"schemas": database.get_output_schemas()}
+
+@app.get("/api/output-schemas/default")
+def get_default_schema():
+    schema = database.get_default_output_schema()
+    if not schema:
+        raise HTTPException(status_code=404, detail="No default output schema found.")
+    return schema
+
+@app.post("/api/output-schemas")
+def create_output_schema(body: OutputSchemaBody):
+    fields = [f.dict() for f in body.fields]
+    if not any(f.get("key") == "title" for f in fields):
+        raise HTTPException(status_code=400, detail="Schema must contain a 'title' field.")
+    schema = database.save_output_schema(body.name, fields, body.platform or "instagram")
+    return schema
+
+@app.put("/api/output-schemas/{schema_id}")
+def update_output_schema(schema_id: str, body: OutputSchemaBody):
+    fields = [f.dict() for f in body.fields]
+    # Guard: title must always be present and enabled — it is required for parsing
+    if not any(f.get("key") == "title" for f in fields):
+        raise HTTPException(status_code=400, detail="Schema must contain a 'title' field.")
+    updated = database.update_output_schema(schema_id, body.name, fields, body.platform or "instagram")
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Schema '{schema_id}' not found.")
+    return updated
+
+@app.put("/api/output-schemas/{schema_id}/default")
+def set_default_schema(schema_id: str):
+    ok = database.set_default_output_schema(schema_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail=f"Schema '{schema_id}' not found.")
+    return {"status": "ok", "default": schema_id}
+
+@app.delete("/api/output-schemas/{schema_id}")
+def delete_output_schema(schema_id: str):
+    ok = database.delete_output_schema(schema_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail=f"Schema '{schema_id}' not found.")
+    return {"status": "deleted"}
+
+# ── Post routes ───────────────────────────────────────────────────────────────
+
 @app.get("/api/posts")
 def get_posts():
     return {"posts": storage.get_posts()}
@@ -379,6 +585,241 @@ def delete_post(post_id: str):
 def clear_posts():
     storage.clear_posts()
     return {"status": "cleared"}
+
+@app.post("/api/check-image-quality")
+def check_image_quality(body: dict):
+    """Laplacian variance blur detection + dimension check.
+    Returns sharp=True only if score > 100 AND shorter side >= 1000px."""
+    tmp_path = body.get("tmp_path", "")
+    if not tmp_path or not os.path.exists(tmp_path):
+        raise HTTPException(status_code=400, detail="File not found")
+
+    import cv2
+    import numpy as np
+
+    img = cv2.imread(tmp_path)
+    if img is None:
+        raise HTTPException(status_code=422, detail="Could not decode image")
+
+    h, w = img.shape[:2]
+    file_kb = os.path.getsize(tmp_path) // 1024
+    gray  = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    score = float(cv2.Laplacian(gray, cv2.CV_64F).var())
+    min_dim = min(w, h)
+
+    # Both gates must pass: sharpness AND resolution
+    sharp = score > 100.0 and min_dim >= 1000
+
+    print(f"[quality] {os.path.basename(tmp_path)}: {w}x{h}px {file_kb}KB score={score:.1f} min_dim={min_dim} sharp={sharp}")
+
+    return {
+        "sharp": sharp,
+        "score": score,
+        "width": w,
+        "height": h,
+        "file_kb": file_kb,
+        "path": tmp_path,
+    }
+
+@app.post("/api/posts/{post_id}/image")
+def attach_post_image(post_id: str, body: dict):
+    """Attach a downloaded tmp image to a post."""
+    tmp_path = body.get("tmp_path", "")
+    if not tmp_path or not os.path.exists(tmp_path):
+        raise HTTPException(status_code=400, detail="Image file not found")
+    # Copy to backend/data/images/
+    images_dir = os.path.join(os.path.dirname(__file__), "data", "images")
+    os.makedirs(images_dir, exist_ok=True)
+    ext = os.path.splitext(tmp_path)[1] or ".png"
+    dest = os.path.join(images_dir, f"{post_id}{ext}")
+    import shutil
+    shutil.copy2(tmp_path, dest)
+    # Update post record
+    try:
+        storage.attach_image(post_id, dest)
+    except Exception:
+        pass  # post may not exist in DB yet — image still saved
+    return {"success": True, "image_path": dest}
+
+# ══════════════════════════════════════════════════════════════════════════════
+# AUTH ROUTES
+# ══════════════════════════════════════════════════════════════════════════════
+
+# In-memory PKCE state store: state_token → { provider, code_verifier, ts }
+_pkce_store: dict = {}
+_PKCE_TTL = 600  # 10 minutes
+
+
+def _clean_pkce() -> None:
+    now = _time.time()
+    for k in [k for k, v in _pkce_store.items() if now - v["ts"] > _PKCE_TTL]:
+        del _pkce_store[k]
+
+
+def _bearer(header: str) -> str:
+    return header[7:].strip() if header.startswith("Bearer ") else header.strip()
+
+
+class AuthCallbackBody(BaseModel):
+    provider: str
+    code: str
+    state: str
+
+
+class LogoutBody(BaseModel):
+    token: str
+
+
+@app.get("/api/auth/providers")
+def get_configured_providers():
+    """Return which providers have credentials configured in .env."""
+    return {"providers": auth.configured_providers()}
+
+
+@app.get("/api/auth/url")
+def get_auth_url(provider: str):
+    """Generate PKCE pair and return the provider authorization URL."""
+    _clean_pkce()
+    try:
+        verifier, challenge = auth.generate_pkce_pair()
+        state = auth.generate_state()
+        _pkce_store[state] = {"provider": provider, "code_verifier": verifier, "ts": _time.time()}
+        return {"url": auth.build_auth_url(provider, state, challenge), "state": state}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/auth/callback")
+async def auth_callback(body: AuthCallbackBody):
+    """Validate state, exchange code, upsert user, issue session token."""
+    _clean_pkce()
+    entry = _pkce_store.pop(body.state, None)
+    if not entry:
+        raise HTTPException(status_code=400, detail="Invalid or expired state parameter.")
+    if entry["provider"] != body.provider:
+        raise HTTPException(status_code=400, detail="Provider mismatch.")
+    try:
+        profile = await auth.complete_oauth(body.provider, body.code, entry["code_verifier"])
+    except ValueError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    user = auth_db.upsert_user(**profile)
+    session = auth_db.create_session(user["id"])
+    log.info("Login: %s via %s", user["email"], body.provider)
+    return {"session_token": session["token"], "expires_at": session["expires_at"],
+            "user": {k: user[k] for k in ("id", "email", "name", "avatar_url", "provider")}}
+
+
+@app.get("/api/auth/me")
+def auth_me(authorization: str = Header(default="")):
+    row = auth_db.validate_session(_bearer(authorization))
+    if not row:
+        raise HTTPException(status_code=401, detail="Invalid or expired session.")
+    return {k: row[k] for k in ("id", "email", "name", "avatar_url", "provider")}
+
+
+@app.post("/api/auth/logout")
+def auth_logout(body: LogoutBody):
+    auth_db.delete_session(body.token)
+    return {"ok": True}
+
+
+# ── Template routes ───────────────────────────────────────────────────────────
+
+class CreateTemplateBody(BaseModel):
+    name: str
+    canvas_json: str
+    thumbnail: Optional[str] = None
+    width: Optional[int] = 1080
+    height: Optional[int] = 1080
+    slot_schema: Optional[dict] = None
+
+class UpdateTemplateBody(BaseModel):
+    name: Optional[str] = None
+    canvas_json: Optional[str] = None
+    thumbnail: Optional[str] = None
+    width: Optional[int] = None
+    height: Optional[int] = None
+    slot_schema: Optional[dict] = None
+
+@app.get("/api/templates")
+def list_templates():
+    return database.get_templates()
+
+@app.post("/api/templates")
+def create_template(body: CreateTemplateBody):
+    tmpl_id = database.save_template(
+        name=body.name,
+        canvas_json=body.canvas_json,
+        thumbnail=body.thumbnail,
+        width=body.width or 1080,
+        height=body.height or 1080,
+        slot_schema=body.slot_schema,
+    )
+    tmpl = database.get_template(tmpl_id)
+    if not tmpl:
+        raise HTTPException(status_code=500, detail="Failed to retrieve created template.")
+    return tmpl
+
+@app.get("/api/templates/{template_id}")
+def get_template(template_id: str):
+    tmpl = database.get_template(template_id)
+    if not tmpl:
+        raise HTTPException(status_code=404, detail=f"Template '{template_id}' not found.")
+    return tmpl
+
+@app.put("/api/templates/{template_id}")
+def update_template(template_id: str, body: UpdateTemplateBody):
+    kwargs = {k: v for k, v in body.dict().items() if v is not None}
+    ok = database.update_template(template_id, **kwargs)
+    if not ok:
+        raise HTTPException(status_code=404, detail=f"Template '{template_id}' not found.")
+    return database.get_template(template_id)
+
+@app.delete("/api/templates/{template_id}")
+def delete_template(template_id: str):
+    ok = database.delete_template(template_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail=f"Template '{template_id}' not found.")
+    return {"status": "deleted"}
+
+
+# ── Skill routes ──────────────────────────────────────────────────────────────
+
+class CreateSkillBody(BaseModel):
+    name: str
+    platform: Optional[str] = "instagram"
+    template_id: Optional[str] = None
+    output_schema: Optional[dict] = None
+    ai_instructions: Optional[str] = None
+    schedule_cron: Optional[str] = None
+
+@app.get("/api/skills")
+def list_skills():
+    return database.get_skills()
+
+@app.post("/api/skills")
+def create_skill(body: CreateSkillBody):
+    skill_id = database.save_skill(
+        name=body.name,
+        platform=body.platform or "instagram",
+        template_id=body.template_id,
+        output_schema=body.output_schema,
+        ai_instructions=body.ai_instructions,
+        schedule_cron=body.schedule_cron,
+    )
+    skills = database.get_skills()
+    created = next((s for s in skills if s["id"] == skill_id), None)
+    if not created:
+        raise HTTPException(status_code=500, detail="Failed to retrieve created skill.")
+    return created
+
+@app.delete("/api/skills/{skill_id}")
+def delete_skill(skill_id: str):
+    ok = database.delete_skill(skill_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail=f"Skill '{skill_id}' not found.")
+    return {"status": "deleted"}
+
 
 if __name__ == "__main__":
     import uvicorn

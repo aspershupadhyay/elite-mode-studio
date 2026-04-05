@@ -1,7 +1,11 @@
 import os
 from dotenv import load_dotenv
+from pathlib import Path
 
-load_dotenv()
+# Always load from the .env file next to this file, with override=True
+# so updated keys in .env always win over stale environment variables.
+_env_path = Path(__file__).parent / ".env"
+load_dotenv(_env_path, override=True)
 
 NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY", "")
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")

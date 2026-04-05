@@ -48,6 +48,7 @@ from datetime import datetime, timedelta
 import re, time, logging, json, asyncio, itertools
 
 from config import NVIDIA_API_KEY, TAVILY_API_KEY, LLM_MODEL, EMBED_MODEL, RERANK_MODEL
+import database as _db
 
 # ── aiohttp nuclear patch (runs AFTER aiohttp is imported via LangChain deps) ──
 # aiohttp creates TCPConnectors with ssl=True which calls its own SSL path.
@@ -73,16 +74,20 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 
 DOCS_DIR          = os.path.join(os.path.dirname(__file__), "..", "docs")
 CONFIG_PATH       = os.path.join(os.path.dirname(__file__), "search_config.json")
+FAISS_INDEX_PATH  = os.path.join(os.path.dirname(__file__), "data", "faiss_index")
 MAX_CONTEXT_CHARS = 16_000
 
 # ── Load / save search config ─────────────────────────────────────────────────
 _DEFAULT_CONFIG = {
     "tavily": {
         "search_depth": "advanced",
-        "max_results": 10,
+        "max_results": 20,
         "chunks_per_source": 5,
         "include_answer": "advanced",
         "time_range": "day",
+        "topic": "news",
+        "include_images": False,
+        "include_raw_content": "markdown",
         "include_domains": [
             "reuters.com","apnews.com","bbc.com","bbc.co.uk",
             "bloomberg.com","ft.com","wsj.com","economist.com",
@@ -99,12 +104,12 @@ _DEFAULT_CONFIG = {
         "llm_model": LLM_MODEL,
         "embed_model": EMBED_MODEL,
         "rerank_model": RERANK_MODEL,
-        "max_tokens": 4096,
+        "max_tokens": 2048,
         "top_n_rerank": 4
     },
     "output": {
-        "title_min_length": 50,
-        "title_max_length": 100,
+        "title_min_length": 60,
+        "title_max_length": 110,
         "include_hook": False,
         "include_category": False,
         "include_9x16": False,
@@ -140,12 +145,116 @@ FRESHNESS_CONFIG = {
 }
 
 TRENDING_QUERIES = {
-    "GEOPOLITICS": "top geopolitics breaking news {date} verified",
-    "AI & TECH":   "top AI artificial intelligence breakthrough {date}",
-    "FINANCE":     "top global finance markets economy {date}",
-    "CRYPTO":      "top cryptocurrency bitcoin ethereum {date}",
-    "DEFENSE":     "top military defense conflict {date}",
-    "CLIMATE":     "top climate energy transition policy {date}",
+    "AI & TECH": [
+        "top AI artificial intelligence breakthrough {date}",
+        "technology startup funding product launch {date}",
+        "machine learning robotics software release {date}",
+    ],
+    "AUTOMOTIVE": [
+        "top automotive car EV electric vehicle news {date}",
+        "Tesla BMW Mercedes new model launch {date}",
+        "self-driving autonomous vehicle industry {date}",
+    ],
+    "BEAUTY & FASHION": [
+        "top beauty fashion trend style {date}",
+        "luxury brand runway collection launch {date}",
+        "skincare makeup influencer trend {date}",
+    ],
+    "BUSINESS": [
+        "top business corporate strategy deal merger {date}",
+        "CEO leadership company news earnings {date}",
+        "startup entrepreneurship funding round {date}",
+    ],
+    "CLIMATE": [
+        "top climate energy transition policy {date}",
+        "renewable energy carbon emissions environment {date}",
+        "climate disaster weather extreme event {date}",
+    ],
+    "CREATOR ECONOMY": [
+        "top creator economy influencer brand deal {date}",
+        "YouTube Instagram TikTok creator news {date}",
+        "social media monetization platform update {date}",
+    ],
+    "CRYPTO": [
+        "top cryptocurrency bitcoin ethereum {date}",
+        "crypto blockchain defi regulation {date}",
+        "altcoin NFT web3 exchange {date}",
+    ],
+    "CULTURE & ENTERTAINMENT": [
+        "top entertainment culture pop music film {date}",
+        "celebrity news awards show release {date}",
+        "viral moment cultural trend {date}",
+    ],
+    "DEFENSE": [
+        "top military defense conflict {date}",
+        "army navy weapons pentagon NATO {date}",
+        "warfare security threat intelligence {date}",
+    ],
+    "EDUCATION": [
+        "top education learning university news {date}",
+        "edtech online learning skill development {date}",
+        "student career academic research {date}",
+    ],
+    "FINANCE": [
+        "top global finance markets economy {date}",
+        "stock market earnings central bank interest rates {date}",
+        "recession inflation trade deal economy {date}",
+    ],
+    "FITNESS & HEALTH": [
+        "top fitness health wellness trend {date}",
+        "workout nutrition diet science {date}",
+        "mental health wellbeing research {date}",
+    ],
+    "FOOD & BEVERAGE": [
+        "top food beverage restaurant industry {date}",
+        "chef cuisine recipe trend {date}",
+        "food startup brand launch {date}",
+    ],
+    "GAMING": [
+        "top gaming video game esports {date}",
+        "PlayStation Xbox Nintendo PC game release {date}",
+        "game studio funding esports tournament {date}",
+    ],
+    "GEOPOLITICS": [
+        "top geopolitics breaking news {date} verified",
+        "international diplomacy crisis conflict {date}",
+        "world leaders summit war sanctions {date}",
+    ],
+    "MOTIVATION & MINDSET": [
+        "top motivation mindset productivity self-improvement {date}",
+        "success habits entrepreneur mindset {date}",
+        "personal growth psychology discipline {date}",
+    ],
+    "MUSIC": [
+        "top music artist album release chart {date}",
+        "music industry streaming concert tour {date}",
+        "new song drop music video release {date}",
+    ],
+    "REAL ESTATE": [
+        "top real estate property market housing {date}",
+        "mortgage interest rate housing prices {date}",
+        "real estate investment commercial property {date}",
+    ],
+    "SCIENCE & SPACE": [
+        "top science discovery research breakthrough {date}",
+        "NASA SpaceX space exploration mission {date}",
+        "biology physics chemistry discovery {date}",
+    ],
+    "SPORTS": [
+        "top sports breaking news {date}",
+        "football cricket basketball match result {date}",
+        "athlete transfer deal championship {date}",
+    ],
+    "STARTUPS & VC": [
+        "top startup venture capital funding round {date}",
+        "unicorn IPO acquisition founder {date}",
+        "seed series A B funding announcement {date}",
+    ],
+    "TRAVEL & LIFESTYLE": [
+        "top travel destination lifestyle trend {date}",
+        "tourism hotel airline luxury experience {date}",
+        "travel visa policy destination guide {date}",
+    ],
 }
 
 # ── AI Content Director: Campaign angles ──────────────────────────────────────
@@ -157,93 +266,6 @@ ANGLE_PROMPTS = {
     "emotional_hook": "Open with the human story behind the headline. Focus on impact on real people, communities, or livelihoods.",
     "controversy":    "Frame the post around the central tension or conflict. Present both sides briefly, then take a clear analytical stance backed by the facts.",
     "call_to_action": "Write for a reader who wants to know 'what should I do with this information?'. Every section ends with an implication for the audience.",
-}
-
-HOOK_BLOCK = """```hook_text
-5 words maximum. A punch that stops the scroll. Not a shortened title.
-```"""
-CATEGORY_BLOCK = """```category
-One of: GEOPOLITICS · AI & TECH · FINANCE · CRYPTO · BUSINESS · POWER · BREAKING · MARKETS · DEFENSE · CLIMATE
-Return only the label. Nothing else.
-```"""
-PORTRAIT_BLOCK = """```image_prompt_9x16
-Same literal named subjects as 16x9. Portrait framing for Stories/Reels.
-Primary subject fills top 65%. BOTTOM 35% must be completely clear.
-STRUCTURE: SUBJECT / COMPOSITION / SCENE / LIGHTING / COLOR / ATMOSPHERE / STYLE / TECHNICAL
-TECHNICAL: 1080x1920. Bottom 35% fades to #0A0A0A. Zero text. Zero watermarks.
-```"""
-
-# ── Persona, Tone, Platform & Length modifiers ────────────────────────────────
-PERSONA_MODIFIERS = {
-    "journalist": "",  # default — elite mode unchanged
-    "marketer": """
-## PERSONA OVERRIDE — DIGITAL MARKETER
-You are a top-tier digital marketer creating high-converting social content. Your goals:
-- Lead with a benefit-driven angle — "what's in it for the audience"
-- Use impressive numbers and social proof to build credibility
-- Build desire and aspiration, not just awareness
-- End caption with a subtle but clear call-to-action paragraph
-- Title should create a curiosity gap — tease the punchline, don't give it away
-- Enthusiastic but credible tone; never desperate
-""",
-    "educator": """
-## PERSONA OVERRIDE — EDUCATOR
-You are an expert educator making complex topics genuinely accessible. Your goals:
-- Lead with "why this matters to YOUR life or business"
-- Use analogies to translate abstract concepts into everyday language
-- Structure: Hook → What happened → What it means → Why you should care → Key takeaway
-- Numbered steps or bullet points welcome for how-to content
-- Warm, curious, accessible — no unnecessary jargon
-""",
-    "crypto": """
-## PERSONA OVERRIDE — CRYPTO / WEB3 ANALYST
-You are a sharp on-chain analyst writing for DeFi-native and crypto-sophisticated audiences. Your goals:
-- Lead with on-chain data, protocol metrics, or wallet flow when available
-- Cover: price implications, protocol TVL impact, whale activity, regulatory signal, chain dynamics
-- Be specific: which chain, which protocol, which token, which wallet
-- Audience understands ETH, BTC, DeFi, NFTs, L2s — no hand-holding basics
-- Alpha tone: precise, direct, zero hype
-""",
-    "finance": """
-## PERSONA OVERRIDE — MACRO / FINANCE ANALYST
-You are a macro analyst writing for institutional and sophisticated retail investors. Your goals:
-- Lead with the market implication: rates, spreads, sector rotation, currency impact
-- Reference Fed, ECB, yield curve, credit markets where relevant
-- Use proper financial terminology: basis points, P/E multiples, yield spread, carry trade
-- Audience: Bloomberg terminal users — not Reddit retail
-- Dense, precise, institutional gravity
-""",
-    "brand": """
-## PERSONA OVERRIDE — PERSONAL BRAND BUILDER
-You are a personal brand strategist helping founders and executives build authority. Your goals:
-- Frame every story: "what this means for your career, business, or worldview"
-- Lead with a bold, original perspective — not just a news recap
-- Make the author sound insightful and ahead of the curve
-- Every post should spark debate or invite replies
-- End with a clear personal opinion or prediction
-- Conversational but authoritative
-""",
-}
-
-TONE_MODIFIERS = {
-    "analytical": "",  # default
-    "conversational": "\n\nTONE DIRECTIVE: Write conversationally. Short sentences. Sound like texting a smart friend — not writing a report. First-person OK. Contractions encouraged. Avoid corporate language.",
-    "professional": "\n\nTONE DIRECTIVE: Write with the precision of a senior executive memo. No slang. Dense but clear. Formal register throughout. Every sentence earns its place.",
-    "educational": "\n\nTONE DIRECTIVE: Teach, don't just report. Use analogies to simplify. Define technical terms on first use. Guide the reader through the logic step by step.",
-    "punchy": "\n\nTONE DIRECTIVE: Short. Sharp. Sentences under 12 words. Maximum impact per word. No filler. Write like a viral tweet thread — each line hits harder than the last.",
-}
-
-CAPTION_LENGTH_MODIFIERS = {
-    "short":  "\n\nLENGTH DIRECTIVE: Caption must be 300–500 characters total. One strong fact, one implication. No footnotes — inline cite only.",
-    "medium": "",  # default (800–1200 chars per main instruction)
-    "long":   "\n\nLENGTH DIRECTIVE: Caption should be 1400–2000 characters. Richly detailed. Multiple clearly structured paragraphs. Full context, multi-angle analysis, strong conclusion.",
-}
-
-PLATFORM_MODIFIERS = {
-    "instagram":  "",  # default
-    "linkedin":   "\n\nPLATFORM DIRECTIVE: Optimize for LinkedIn. Blank line after every sentence for white space. First line hooks without context (standalone). End with an open question to spark comments. Use 2–3 professional hashtags only.",
-    "twitter":    "\n\nPLATFORM DIRECTIVE: Optimize for Twitter/X. Caption must feel like a viral thread opener — hook on line 1. 280-character mindset. One idea per sentence. Make them click 'see more'.",
-    "newsletter": "\n\nPLATFORM DIRECTIVE: Optimize for email newsletter. Conversational intro, clear subheadings, rich analysis. No hashtags. Sign off with a bold key takeaway sentence.",
 }
 
 # ── Date helpers ──────────────────────────────────────────────────────────────
@@ -284,18 +306,24 @@ def build_search_query(topic: str, freshness: str = "2days") -> str:
                f"last 2 days {d['month']}" if freshness == "2days" else d["month"]
     return (base + f" {date_tag} verified") if len(base) < 60 else (base + f" {date_tag}")
 
-def build_trending_query(category: str, freshness: str = "2days") -> str:
+def build_trending_queries(category: str, freshness: str = "2days") -> list:
     d    = get_date_strings()
     date_tag = f"today {d['today']}" if freshness == "today" else \
                f"last 2 days {d['month']}" if freshness == "2days" else d["month"]
-    template = TRENDING_QUERIES.get(category, "top {cat} news {date}")
-    return template.format(date=date_tag, cat=category)
+    templates = TRENDING_QUERIES.get(category, ["top {cat} news {date}"])
+    return [t.format(date=date_tag, cat=category) for t in templates]
+
+def build_trending_query(category: str, freshness: str = "2days") -> str:
+    return build_trending_queries(category, freshness)[0]
 
 
 def classify_error(e: Exception) -> str:
     msg = str(e)
     if "502" in msg or "Bad Gateway" in msg:   return "NVIDIA API gateway error (502). Wait 30s and retry."
     if "401" in msg or "invalid api key" in msg.lower(): return "Invalid API key. Check Settings."
+    if "403" in msg or "forbidden" in msg.lower(): return "Access denied (403). Check your API key permissions."
+    if "404" in msg and "not found for account" in msg.lower(): return "NVIDIA model not available on your account. Go to Settings → AI Models and select a different LLM (e.g. meta/llama-3.3-70b-instruct)."
+    if "404" in msg or msg.strip() == "Not Found": return "API endpoint not found (404). Check your API keys in Settings."
     if "429" in msg or "rate limit" in msg.lower(): return "Rate limit hit. Wait 60s."
     if "tavily" in msg.lower() or "tvly" in msg.lower(): return "Tavily search failed. Check your Tavily API key."
     if "connection" in msg.lower() or "timeout" in msg.lower(): return "Network timeout. Check your connection."
@@ -315,120 +343,186 @@ def retry(fn, attempts: int = 3, delay: float = 5.0):
                 time.sleep(delay)
     raise last_err
 
-def load_instagram_prompt(include_hook=False, include_category=False,
-                          include_9x16=False, freshness="2days",
-                          persona="journalist", tone="analytical",
-                          platform_target="instagram", caption_length="medium",
-                          custom_instructions="",
-                          title_min_length=50, title_max_length=100) -> str:
-    path = os.path.join(DOCS_DIR, "elite_mode_instruction.md")
-    if not os.path.exists(path):
-        raise FileNotFoundError(f"System prompt not found at {path}")
-    with open(path, "r", encoding="utf-8") as f:
-        content = f.read()
-    content = content.replace("{DATE_RULE}",      build_date_rule(freshness))
-    content = content.replace("{HOOK_BLOCK}",     HOOK_BLOCK     if include_hook     else "NOTE: Skip hook_text block entirely.")
-    content = content.replace("{CATEGORY_BLOCK}", CATEGORY_BLOCK if include_category else "NOTE: Skip category block entirely.")
-    content = content.replace("{PORTRAIT_BLOCK}", PORTRAIT_BLOCK if include_9x16     else "NOTE: Skip image_prompt_9x16 block entirely.")
-    content = content.replace("{TITLE_MIN_LEN}",  str(title_min_length))
-    content = content.replace("{TITLE_MAX_LEN}",  str(title_max_length))
-    # Persona modifier
-    persona_mod = PERSONA_MODIFIERS.get(persona, "")
-    if persona_mod:
-        content += "\n\n" + persona_mod.strip()
-    # Tone modifier
-    tone_mod = TONE_MODIFIERS.get(tone, "")
-    if tone_mod:
-        content += tone_mod
-    # Platform modifier
-    platform_mod = PLATFORM_MODIFIERS.get(platform_target, "")
-    if platform_mod:
-        content += platform_mod
-    # Caption length modifier
-    length_mod = CAPTION_LENGTH_MODIFIERS.get(caption_length, "")
-    if length_mod:
-        content += length_mod
-    # Custom instructions — user override, highest priority
-    if custom_instructions and custom_instructions.strip():
-        content += f"\n\n## CUSTOM INSTRUCTIONS (USER OVERRIDE — FOLLOW EXACTLY)\n{custom_instructions.strip()}"
-    return content
-
-def parse_code_blocks(text: str) -> dict:
-    keys = ["title","hook_text","highlight_words","category",
-            "caption","image_prompt_16x9","image_prompt_9x16"]
-    result = {}
-    for key in keys:
-        m = re.search(rf"```{key}\s*(.*?)```", text, re.DOTALL)
-        result[key] = m.group(1).strip() if m else ""
-    src  = re.search(r"SOURCES\s*(.*?)(?:CONFIDENCE|$)", text, re.DOTALL | re.MULTILINE)
-    conf = re.search(r"CONFIDENCE:\s*(HIGH|MEDIUM|LOW)", text)
-    result["sources_block"] = src.group(1).strip() if src else ""
-    result["confidence"]    = conf.group(1)         if conf else ""
-    # Post-process highlight_words — remove filler, enforce 4-5 high-signal words
-    if result.get("highlight_words") and result.get("title"):
-        result["highlight_words"] = clean_highlight_words(
-            result["highlight_words"], result["title"]
-        )
-    return result
-
-
-# Filler words that must never be highlighted (extends the system prompt ban list)
+# ── Filler words for highlight_words post-processing ─────────────────────────
 _FILLER = {
     "the","a","an","in","to","of","and","but","for","with","by","on","at","is","are",
     "has","have","been","that","this","it","as","or","not","no","all","its","now",
     "from","after","was","were","be","will","can","may","their","there","then","than",
     "when","where","how","who","which","what","up","out","over","new","so","if","do",
-    "into","just","also","about","more","amid","vs","amid","despite","after","before",
-    "during","since","within","across","over","under","against","per","via","off",
-    "amid","amid","amid", "amid", "other", "many", "much", "well", "still", "back",
-    "could", "should", "would", "both", "each", "between", "through", "only",
+    "into","just","also","about","more","amid","vs","despite","before","during","since",
+    "within","across","under","against","per","via","off","other","many","much","well",
+    "still","back","could","should","would","both","each","between","through","only",
 }
 
 def clean_highlight_words(raw: str, title: str) -> str:
-    """
-    Given LLM-produced highlight_words and the title:
-    1. Filter out filler/stopwords
-    2. Only keep words that actually appear in the title (exact match, case-insensitive)
-    3. Score remaining by signal: numbers > proper-noun-like > everything else
-    4. Return top 4-5, comma-separated, UPPER cased to match title rendering
-    """
+    """Filter comma-separated highlight_words: remove filler, keep title-present words, return top 4-5 UPPER."""
     title_upper = title.upper()
-    title_words = set(re.findall(r"[A-Z0-9$€£%']+", title_upper))
-
-    # Parse raw comma-separated words
+    title_words = set(re.findall(r"[A-Z0-9$\u20ac\xa3%\']+", title_upper))
     candidates = [w.strip().upper() for w in raw.split(",") if w.strip()]
-    # Remove anything not in the title
-    candidates = [w for w in candidates if w in title_words]
-    # Remove filler
-    candidates = [w for w in candidates if w.lower() not in _FILLER]
-    # Deduplicate preserving order
+    candidates = [w for w in candidates if w in title_words and w.lower() not in _FILLER]
     seen, filtered = set(), []
     for w in candidates:
         if w not in seen:
-            seen.add(w)
-            filtered.append(w)
-
-    # If LLM gave us too few (e.g., 0-1), pick the best from the title ourselves
+            seen.add(w); filtered.append(w)
     if len(filtered) < 4:
-        # Score title words: numbers/symbols score highest, longer words next
         def score(w):
-            if re.search(r'[0-9$€£%]', w): return 3    # numbers/currencies = highest signal
-            if len(w) >= 5:                return 2     # longer = usually more meaningful
+            if re.search(r'[0-9$\u20ac\xa3%]', w): return 3
+            if len(w) >= 5: return 2
             return 1
-        all_title_words = re.findall(r"[A-Z0-9$€£%']+", title_upper)
-        pool = [w for w in all_title_words if w.lower() not in _FILLER and w not in seen]
-        pool_scored = sorted(set(pool), key=score, reverse=True)
-        for w in pool_scored:
-            if len(filtered) >= 5:
-                break
-            filtered.append(w)
-            seen.add(w)
+        pool = [w for w in re.findall(r"[A-Z0-9$\u20ac\xa3%\']+", title_upper)
+                if w.lower() not in _FILLER and w not in seen]
+        for w in sorted(set(pool), key=score, reverse=True):
+            if len(filtered) >= 5: break
+            filtered.append(w); seen.add(w)
+    return ", ".join(filtered[:5])
 
-    # Trim to max 5
-    filtered = filtered[:5]
 
-    # Return comma-separated, preserving the UPPER case
-    return ", ".join(filtered)
+# ═════════════════════════════════════════════════════════════════════════════
+# Generic XML-based content engine — zero hardcoding
+# ═════════════════════════════════════════════════════════════════════════════
+
+def build_xml_system_prompt(
+    system_prompt: str,
+    output_fields: list,
+    tone: str = "",
+    language: str = "en",
+    post_count: int = 1,
+    search_enabled: bool = True,
+    custom_instructions: str = "",
+    freshness: str = "2days",
+    title_min_length: int = 60,
+    title_max_length: int = 110,
+) -> str:
+    """
+    Assemble the full system prompt from the user's profile.
+    system_prompt  — user-written, owns the persona/rules/style.
+    output_fields  — list of {id, label, aiHint, type, enabled} dicts.
+    Instructs the AI to wrap each field in <field_id>...</field_id> XML tags.
+    Robust to code blocks, long captions, special characters.
+    """
+    # ── Resolve dynamic placeholders in the user's system prompt ─────────────
+    # These are injected by the backend (not user content). Any prompt — whether
+    # the built-in Elite Mode instruction or a completely custom user-written one —
+    # can optionally include these placeholders. If the user's prompt doesn't use
+    # them, the replacements are no-ops. If they do use them, they resolve correctly
+    # regardless of what persona or use case the user has written.
+    #
+    # Must run BEFORE the LangChain-escape step at the bottom of this function
+    # (which turns all remaining {X} into {{X}}), otherwise placeholders never resolve.
+    date_rule = build_date_rule(freshness)
+    resolved = system_prompt.strip()
+    resolved = resolved.replace('{DATE_RULE}',      date_rule or '')
+    resolved = resolved.replace('{TITLE_MIN_LEN}',  str(title_min_length))
+    resolved = resolved.replace('{TITLE_MAX_LEN}',  str(title_max_length))
+    # Optional output-block placeholders — these are Elite Mode specific.
+    # Other use-cases that don't include these placeholders are unaffected.
+    resolved = resolved.replace('{HOOK_BLOCK}',     '')
+    resolved = resolved.replace('{PORTRAIT_BLOCK}', '')
+    resolved = resolved.replace('{CATEGORY_BLOCK}', '')
+
+    parts = [resolved]
+
+    # Date freshness rule — append only if NOT already embedded via {DATE_RULE}
+    if date_rule and '{DATE_RULE}' not in system_prompt:
+        parts.append(f"\n## DATE RULE\n{date_rule}")
+
+    # Tone directive
+    if tone and tone.strip():
+        parts.append(f"\n## TONE\nWrite in a {tone.strip()} tone throughout.")
+
+    # Language directive
+    if language and language != "en":
+        parts.append(f"\n## LANGUAGE\nWrite all output in language code: {language}. Do not mix languages.")
+
+    # Title length constraint
+    parts.append(f"\n## TITLE LENGTH\nEvery title must be between {title_min_length} and {title_max_length} characters. Enforce strictly.")
+
+    # Custom instructions (user override, highest priority)
+    if custom_instructions and custom_instructions.strip():
+        parts.append(f"\n## CUSTOM INSTRUCTIONS (FOLLOW EXACTLY)\n{custom_instructions.strip()}")
+
+    # XML output format
+    enabled = [f for f in output_fields if f.get("enabled", True)]
+    if enabled:
+        lines = [
+            "\n## OUTPUT FORMAT",
+            f"Generate exactly {post_count} post{'s' if post_count != 1 else ''}.",
+            "",
+            "Wrap EVERY field in XML tags exactly as shown below.",
+            "Do NOT add any text, commentary, or explanation outside the XML tags.",
+            "For code examples, wrap code in triple-backtick fences inside the XML tag.",
+            "Do not escape or encode the tag names.",
+            "",
+        ]
+        if post_count > 1:
+            lines.append("<posts>")
+            lines.append("  <post>")
+        for f in enabled:
+            fid   = f.get("id") or f.get("key", "")
+            hint  = f.get("aiHint") or f.get("instruction", "")
+            label = f.get("label", fid)
+            indent = "    " if post_count > 1 else ""
+            lines.append(f"{indent}<{fid}>")
+            hint_str = f": {hint}" if hint else ""
+            lines.append(f"{indent}  [{label}{hint_str}]")
+            lines.append(f"{indent}</{fid}>")
+        if post_count > 1:
+            lines.append("  </post>")
+            lines.append("  ... (repeat <post>...</post> block for each post)")
+            lines.append("</posts>")
+        lines += [
+            "",
+            "After all XML output, append:",
+            "SOURCES",
+            "- bullet list of sources used",
+            "",
+            "CONFIDENCE: HIGH | MEDIUM | LOW",
+        ]
+        parts.append("\n".join(lines))
+
+    if not search_enabled:
+        parts.append("\n## NOTE\nWeb search is disabled. Base response on training knowledge only.")
+
+    full = "\n".join(parts)
+    # Escape { } so LangChain never treats content as template variables
+    full = re.sub(r'\{([A-Za-z_][A-Za-z0-9_]*)\}', r'{{\1}}', full)
+    return full
+
+
+def parse_xml_response(text: str, field_ids: list) -> dict:
+    """
+    Robust XML field extractor.
+
+    For each field_id:
+      - Tries <field_id>...</field_id> with re.DOTALL (handles multiline, code blocks,
+        special chars, angle brackets inside code fences).
+      - Missing fields return empty string — never raises.
+    Also extracts SOURCES block and CONFIDENCE level.
+    Post-processes highlight_words if both highlight_words and title are present.
+    """
+    result: dict = {}
+
+    for fid in field_ids:
+        pattern = rf"<{re.escape(fid)}>\s*(.*?)\s*</{re.escape(fid)}>"
+        m = re.search(pattern, text, re.DOTALL | re.IGNORECASE)
+        result[fid] = m.group(1).strip() if m else ""
+
+    # Sources block
+    src_m = re.search(r"SOURCES\s*\n(.*?)(?=\nCONFIDENCE:|$)", text, re.DOTALL)
+    result["sources_block"] = src_m.group(1).strip() if src_m else ""
+
+    # Confidence
+    conf_m = re.search(r"CONFIDENCE:\s*(HIGH|MEDIUM|LOW)", text, re.IGNORECASE)
+    result["confidence"] = conf_m.group(1).upper() if conf_m else ""
+
+    # Post-process highlight_words
+    if result.get("highlight_words") and result.get("title"):
+        result["highlight_words"] = clean_highlight_words(
+            result["highlight_words"], result["title"]
+        )
+
+    return result
+
 
 def embed_in_batches(embedder, docs: list, batch_size: int = 48) -> FAISS:
     if not docs:
@@ -446,7 +540,8 @@ def build_sourced_context(results_list: list, max_chars: int = MAX_CONTEXT_CHARS
     for r in results_list:
         url     = r.get("url", "")
         pub     = _extract_publisher(url)
-        content = (r.get("raw_content") or r.get("content", "")).strip()
+        title   = r.get("title", "").strip()
+        content = (r.get("raw_content") or r.get("content") or title).strip()
         if not content:
             continue
         header = f"[SOURCE: {pub} | {url}]\n"
@@ -486,11 +581,23 @@ class NvidiaRAG:
         # Previously load_search_config() was called on every single search request.
         self._cfg_cache = load_search_config()
         cfg = self._cfg_cache["nvidia"]
-        self.llm      = ChatNVIDIA(model=cfg["llm_model"],    api_key=NVIDIA_API_KEY, max_completion_tokens=cfg["max_tokens"])
-        self.embedder = NVIDIAEmbeddings(model=cfg["embed_model"],   api_key=NVIDIA_API_KEY, truncate="END")
-        self.reranker = NVIDIARerank(model=cfg["rerank_model"],      api_key=NVIDIA_API_KEY, top_n=cfg["top_n_rerank"])
-        self.tavily   = TavilyClient(api_key=TAVILY_API_KEY)
+        # Read keys directly from os.environ so a load_dotenv(override=True) reload
+        # is picked up correctly when the pipeline is reinitialized after a key update.
+        _nvidia_key  = os.environ.get("NVIDIA_API_KEY", "")
+        _tavily_key  = os.environ.get("TAVILY_API_KEY", "")
+        self.llm      = ChatNVIDIA(model=cfg["llm_model"],    api_key=_nvidia_key, max_completion_tokens=cfg["max_tokens"])
+        self.embedder = NVIDIAEmbeddings(model=cfg["embed_model"],   api_key=_nvidia_key, truncate="END")
+        self.reranker = NVIDIARerank(model=cfg["rerank_model"],      api_key=_nvidia_key, top_n=cfg["top_n_rerank"])
+        self.tavily   = TavilyClient(api_key=_tavily_key)
         self.vectorstore  = None
+        # Try to load persisted FAISS index from disk
+        if os.path.isdir(FAISS_INDEX_PATH):
+            try:
+                self.vectorstore = FAISS.load_local(FAISS_INDEX_PATH, self.embedder, allow_dangerous_deserialization=True)
+                log.info("FAISS index loaded from disk (%s).", FAISS_INDEX_PATH)
+            except Exception as _e:
+                log.warning("Could not load persisted FAISS index: %s", _e)
+                self.vectorstore = None
         self.doc_name     = None
         self._top_context = ""
         self.splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=100)
@@ -507,7 +614,7 @@ class NvidiaRAG:
         chain  = prompt | self.llm | StrOutputParser()
         return retry(lambda: chain.invoke({}))
 
-    def _fetch_web_elite(self, query: str, freshness: str = "2days", is_news: bool = True) -> tuple:
+    def _fetch_web_elite(self, query: str, freshness: str = "2days", is_news: bool = True, max_results_override: int = None) -> tuple:
         """
         Full Tavily v2 search with all advanced parameters.
         Config comes from search_config.json — fully user-customisable.
@@ -518,11 +625,11 @@ class NvidiaRAG:
         kwargs = dict(
             query               = query,
             search_depth        = cfg.get("search_depth", "advanced"),
-            max_results         = cfg.get("max_results", 10),
+            max_results         = max_results_override if max_results_override is not None else cfg.get("max_results", 20),
             chunks_per_source   = cfg.get("chunks_per_source", 5),
             include_answer      = cfg.get("include_answer", "advanced"),
-            include_raw_content = "markdown",
-            include_images      = False,
+            include_raw_content = cfg.get("include_raw_content", "markdown"),
+            include_images      = cfg.get("include_images", False),
         )
 
         # Apply time range — "today" uses days=1 (Tavily rejects start==end date ranges)
@@ -536,8 +643,12 @@ class NvidiaRAG:
             if tr and tr != "none":
                 kwargs["time_range"] = tr
 
+        # topic: if is_news, force "news" unless user has set "finance" or "general" explicitly
+        cfg_topic = cfg.get("topic", "news")
         if is_news:
-            kwargs["topic"] = "news"
+            kwargs["topic"] = cfg_topic if cfg_topic in ("news", "finance") else "news"
+        elif cfg_topic == "finance":
+            kwargs["topic"] = "finance"
 
         # Domain filters
         include_domains = cfg.get("include_domains", [])
@@ -578,11 +689,24 @@ class NvidiaRAG:
         raw, sources, _ = self._fetch_web_elite(query, freshness=freshness, is_news=False)
         web_docs = []
         for r in raw:
-            content = r.get("raw_content") or r.get("content","")
+            content = r.get("raw_content") or r.get("content") or r.get("title", "")
             if content:
                 for c in self.splitter.split_text(content):
                     web_docs.append(Document(page_content=c,
                         metadata={"url": r.get("url",""), "title": r.get("title","")}))
+        # Fallback: domain whitelist may have blocked all results — retry without it
+        if not web_docs and self._cfg_cache["tavily"].get("include_domains"):
+            log.warning("Domain filter yielded no web docs for '%s'. Retrying without domain filter.", query[:60])
+            raw, sources, _ = self._fetch_web_elite(
+                query, freshness=freshness, is_news=False,
+                max_results_override=self._cfg_cache["tavily"].get("max_results", 10)
+            )
+            for r in raw:
+                content = r.get("raw_content") or r.get("content") or r.get("title", "")
+                if content:
+                    for c in self.splitter.split_text(content):
+                        web_docs.append(Document(page_content=c,
+                            metadata={"url": r.get("url",""), "title": r.get("title","")}))
         return web_docs, sources
 
     def _retrieve_and_rerank(self, question: str, store: FAISS) -> list:
@@ -596,6 +720,12 @@ class NvidiaRAG:
         chunks = self.splitter.split_text(text)
         docs   = [Document(page_content=c) for c in chunks]
         self.vectorstore = retry(lambda: embed_in_batches(self.embedder, docs))
+        try:
+            os.makedirs(FAISS_INDEX_PATH, exist_ok=True)
+            self.vectorstore.save_local(FAISS_INDEX_PATH)
+            log.info("FAISS index saved to disk.")
+        except Exception as _e:
+            log.warning("Could not save FAISS index to disk: %s", _e)
         self.doc_name = name
         return len(chunks)
 
@@ -632,69 +762,143 @@ class NvidiaRAG:
         ])
         return {"answer": answer, "sources": sources_meta}
 
+    def generate_content(
+        self,
+        topic: str,
+        system_prompt: str,
+        output_fields: list,
+        tone: str = "",
+        language: str = "en",
+        post_count: int = 1,
+        search_enabled: bool = True,
+        custom_instructions: str = "",
+        freshness: str = "2days",
+        title_min_length: int = 60,
+        title_max_length: int = 110,
+    ) -> dict:
+        """
+        Generic content generator — fully driven by the caller's profile.
+        system_prompt    — user-written full system prompt (no hardcoded base).
+        output_fields    — list of {id, label, aiHint, type, enabled} dicts.
+        Returns {"content": {field_id: value, ...}, "sources": [...], "freshness": str}
+        """
+        cfg_label    = FRESHNESS_CONFIG.get(freshness, FRESHNESS_CONFIG["2days"])["label"]
+        field_ids    = [f.get("id") or f.get("key","") for f in output_fields if f.get("enabled", True)]
+
+        # Web search
+        if search_enabled:
+            query = build_search_query(topic, freshness)
+            raw_results, sources_meta, tavily_answer = self._fetch_web_elite(
+                query, freshness=freshness, is_news=True
+            )
+            context = build_sourced_context(raw_results) if raw_results else ""
+            # Fallback: if domain whitelist produced no usable content, retry without it
+            if not context and self._cfg_cache["tavily"].get("include_domains"):
+                log.warning("Domain filter yielded no content for '%s'. Retrying without domain filter.", topic)
+                raw_results, sources_meta, tavily_answer = self._fetch_web_elite(
+                    query, freshness=freshness, is_news=False,
+                    max_results_override=self._cfg_cache["tavily"].get("max_results", 10)
+                )
+                context = build_sourced_context(raw_results) if raw_results else ""
+            if not context:
+                log.warning("No usable content for '%s'.", topic)
+                context = f"Topic: {topic}\nNo verified sources found. Use your training knowledge."
+            elif tavily_answer:
+                context = f"[TAVILY VERIFIED SUMMARY]\n{tavily_answer}\n\n---\n\n{context}"
+        else:
+            sources_meta = []
+            context = f"Topic: {topic}\nWeb search is disabled. Use your training knowledge."
+
+        system = build_xml_system_prompt(
+            system_prompt       = system_prompt,
+            output_fields       = output_fields,
+            tone                = tone,
+            language            = language,
+            post_count          = post_count,
+            search_enabled      = search_enabled,
+            custom_instructions = custom_instructions,
+            freshness           = freshness,
+            title_min_length    = title_min_length,
+            title_max_length    = title_max_length,
+        )
+        citation_rule = (
+            "\n\nSOURCE RULE: Every fact MUST come from the research context above. "
+            "Each source is labeled [SOURCE: Publisher | url]. Cite inline. "
+            "Do NOT fabricate facts not present in the context."
+        ) if search_enabled else ""
+
+        log.info("Generating: '%s' | freshness=%s | sources=%d | fields=%s",
+                 topic, freshness, len(sources_meta), field_ids)
+
+        _sys = system + citation_rule  # already escaped by build_xml_system_prompt
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", _sys),
+            ("human",  "Generate content about: {question}\n\nResearch context:\n{context}")
+        ])
+        raw    = retry(lambda: (prompt | self.llm | StrOutputParser())
+                       .invoke({"question": topic, "context": context}))
+        parsed = parse_xml_response(raw, field_ids)
+        parsed["raw"] = raw
+        return {"content": parsed, "sources": sources_meta, "freshness": cfg_label}
+
     def generate_instagram(self, topic: str, include_9x16=False, include_hook=False,
                            include_category=False, freshness="2days",
                            persona="journalist", tone="analytical",
                            platform_target="instagram", caption_length="medium",
                            custom_instructions="",
                            title_min_length=50, title_max_length=100) -> dict:
-        cfg_label = FRESHNESS_CONFIG.get(freshness, FRESHNESS_CONFIG["2days"])["label"]
-        query     = build_search_query(topic, freshness)
-
-        raw_results, sources_meta, tavily_answer = self._fetch_web_elite(
-            query, freshness=freshness, is_news=True
+        """Legacy wrapper — routes through generate_content with a sensible default profile."""
+        default_fields = [
+            {"id": "title",           "label": "Title",           "aiHint": "Punchy headline. Must contain at least one number.", "type": "text",  "enabled": True},
+            {"id": "highlight_words", "label": "Highlight Words", "aiHint": "4-5 high-signal words from the title. Comma-separated.", "type": "text", "enabled": True},
+            {"id": "caption",         "label": "Caption",         "aiHint": "800-1200 character social media caption with inline source citations.", "type": "text", "enabled": True},
+            {"id": "image_prompt_1x1","label": "Image Prompt",    "aiHint": "Photorealistic editorial image prompt. No text in image.", "type": "image_prompt", "enabled": True},
+        ]
+        default_system = (
+            "You are an expert social media content creator. "
+            "Create high-quality, factual, engaging content based on the research provided. "
+            "Every claim must be backed by the sources in the research context."
+        )
+        return self.generate_content(
+            topic             = topic,
+            system_prompt     = default_system,
+            output_fields     = default_fields,
+            tone              = tone,
+            search_enabled    = True,
+            custom_instructions = custom_instructions,
+            freshness         = freshness,
         )
 
-        if not raw_results:
-            log.warning("No trusted results for '%s'.", topic)
-            context = f"Topic: {topic}\nNo verified sources found."
-        else:
-            context = build_sourced_context(raw_results)
-            if tavily_answer:
-                context = f"[TAVILY VERIFIED SUMMARY]\n{tavily_answer}\n\n---\n\n{context}"
-
-        system = load_instagram_prompt(include_hook=include_hook,
-                                       include_category=include_category,
-                                       include_9x16=include_9x16,
-                                       freshness=freshness,
-                                       persona=persona,
-                                       tone=tone,
-                                       platform_target=platform_target,
-                                       caption_length=caption_length,
-                                       custom_instructions=custom_instructions,
-                                       title_min_length=title_min_length,
-                                       title_max_length=title_max_length)
-        citation_rule = (
-            "\n\nCRITICAL SOURCE RULE: Every fact in your output MUST come from the research context above. "
-            "Each source is labeled [SOURCE: Publisher | url]. Cite inline like 'per Reuters'. "
-            "If a fact is NOT in the context — do NOT include it. No fabrication. No assumptions."
-        )
-
-        log.info("Forging: '%s' | freshness=%s | sources=%d", topic, freshness, len(sources_meta))
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", system + citation_rule),
-            ("human",  "forge a post about {question}\n\nResearch context:\n{context}")
-        ])
-        raw    = retry(lambda: (prompt | self.llm | StrOutputParser())
-                       .invoke({"question": topic, "context": context}))
-        parsed = parse_code_blocks(raw)
-        parsed["raw"] = raw
-        return {"content": parsed, "sources": sources_meta, "freshness": cfg_label}
-
-    def get_trending(self, category: str, freshness: str = "2days") -> list:
-        query = build_trending_query(category, freshness)
-        raw, _, _ = self._fetch_web_elite(query, freshness=freshness, is_news=True)
+    def get_trending(self, category: str, freshness: str = "2days", count: int = 20) -> list:
+        queries = build_trending_queries(category, freshness)
+        seen_titles = set()
         topics = []
-        for r in raw:
-            title = r.get("title","").strip()
-            if title and len(title) > 10:
-                topics.append({
-                    "title":     title,
-                    "url":       r.get("url",""),
-                    "publisher": _extract_publisher(r.get("url","")),
-                    "snippet":   r.get("content","")[:200],
-                })
-        return topics[:8]
+
+        for query in queries:
+            if len(topics) >= count:
+                break
+            try:
+                raw, _, _ = self._fetch_web_elite(
+                    query, freshness=freshness, is_news=True,
+                    max_results_override=20,
+                )
+            except Exception:
+                continue
+            for r in raw:
+                if len(topics) >= count:
+                    break
+                title = r.get("title", "").strip()
+                key = title.lower()[:60]
+                if title and len(title) > 10 and key not in seen_titles:
+                    seen_titles.add(key)
+                    topics.append({
+                        "title":     title,
+                        "url":       r.get("url", ""),
+                        "publisher": _extract_publisher(r.get("url", "")),
+                        "snippet":   r.get("content", "")[:200],
+                    })
+
+        return topics
 
     def batch_generate(self, category: str, count: int = 3, include_9x16=False,
                        include_hook=False, include_category=False, freshness="2days") -> list:
@@ -727,23 +931,25 @@ class NvidiaRAG:
         topic_lines = "\n".join(f"{i+1}. {t['title']}" for i, t in enumerate(topics[:count]))
         angles_csv  = ", ".join(CAMPAIGN_ANGLES)
 
+        human_msg = (
+            f"Category: {category}\n\n"
+            f"Topics:\n{topic_lines}\n\n"
+            f"Assign one angle from this exact list to each topic: {angles_csv}\n\n"
+            'Return JSON with this structure exactly: '
+            '{"series_tone": "string", "assignments": [{"post_index": 0, "angle": "string", "angle_rationale": "string"}]}'
+        )
+
         prompt = ChatPromptTemplate.from_messages([
             ("system",
              "You are an elite social media campaign strategist. "
              "You receive a list of news topics and assign one unique angle to each post "
              "so the content series feels varied and non-repetitive. "
              "Respond with ONLY a valid JSON object — no markdown fences, no prose outside JSON."),
-            ("human",
-             f"Category: {category}\n\n"
-             f"Topics:\n{topic_lines}\n\n"
-             f"Assign one angle from this exact list to each topic: {angles_csv}\n\n"
-             f'Return JSON with this structure exactly: '
-             f'{{"series_tone": "string", "assignments": [{{"post_index": 0, "angle": "string", "angle_rationale": "string"}}]}}'
-            )
+            ("human", "{input}"),
         ])
 
         try:
-            raw = retry(lambda: (prompt | self.llm | StrOutputParser()).invoke({}))
+            raw = retry(lambda: (prompt | self.llm | StrOutputParser()).invoke({"input": human_msg}))
             clean = re.sub(r"```(?:json)?|```", "", raw).strip()
             brief = json.loads(clean)
             # Validate structure
@@ -764,10 +970,18 @@ class NvidiaRAG:
         self,
         category: str,
         count: int = 3,
+        topics: list | None = None,
         include_9x16: bool = False,
         include_hook: bool = False,
         include_category: bool = False,
         freshness: str = "2days",
+        persona: str = "journalist",
+        tone: str = "analytical",
+        platform_target: str = "instagram",
+        caption_length: str = "medium",
+        custom_instructions: str = "",
+        title_min_length: int = 50,
+        title_max_length: int = 100,
     ):
         """
         Async generator — yields SSE-formatted strings ('data: {...}\\n\\n').
@@ -783,28 +997,71 @@ class NvidiaRAG:
           batch_done      — once at the very end
         """
         import storage as _storage
+        import dedup as _dedup
 
         loop = asyncio.get_running_loop()
 
         def sse(obj: dict) -> str:
             return f"data: {json.dumps(obj)}\n\n"
 
-        # ── Step 1: Fetch trending topics (sync → executor) ────────────────────
-        try:
-            topics = await loop.run_in_executor(
-                None, lambda: self.get_trending(category, freshness=freshness)
-            )
-        except Exception as e:
-            yield sse({"type": "post_error", "post_index": -1, "error": classify_error(e)})
-            yield sse({"type": "batch_done"})
-            return
+        # ── Step 0: Init dedup store (create DB, cleanup expired) ──────────────
+        await loop.run_in_executor(None, _dedup.init)
 
-        topics = topics[:count]
-        if not topics:
-            yield sse({"type": "post_error", "post_index": -1,
-                       "error": f"No trending topics found for '{category}'. Try a different category."})
-            yield sse({"type": "batch_done"})
-            return
+        # ── Step 1: Resolve topics then deduplicate ────────────────────────────
+        if topics:
+            # User-provided topics — use exactly as-is, skip dedup entirely.
+            # Dedup exists to prevent re-generating the same trending news stories;
+            # it must never intercept or replace explicit user queries.
+            # If fewer topics than count (e.g. 1 topic, count=3), repeat the topic
+            # so all N posts are generated on the same subject with different angles.
+            base = [{"title": t, "url": ""} for t in topics]
+            resolved_topics = (base * count)[:count] if len(base) < count else base[:count]
+        else:
+            try:
+                # Fetch enough candidates for dedup to work with (2x headroom)
+                raw_topics = await loop.run_in_executor(
+                    None, lambda: self.get_trending(category, freshness=freshness, count=count * 2)
+                )
+            except Exception as e:
+                yield sse({"type": "post_error", "post_index": -1, "error": classify_error(e)})
+                yield sse({"type": "batch_done"})
+                return
+
+            if not raw_topics:
+                yield sse({"type": "post_error", "post_index": -1,
+                           "error": f"No trending topics found for '{category}'. Try a different category."})
+                yield sse({"type": "batch_done"})
+                return
+
+            # Run dedup pipeline — gates 1, 2, 3 as needed
+            dedup_result = await loop.run_in_executor(
+                None,
+                lambda: _dedup.filter_topics(
+                    raw_topics=raw_topics,
+                    target=count,
+                    category=category,
+                    freshness=freshness,
+                    llm=self.llm,
+                    get_trending_fn=self.get_trending,
+                )
+            )
+
+            resolved_topics = dedup_result["approved"]
+
+            if not resolved_topics:
+                yield sse({"type": "post_error", "post_index": -1,
+                           "error": dedup_result.get("message") or "No unique topics found after deduplication."})
+                yield sse({"type": "batch_done"})
+                return
+
+            # If shortfall, notify frontend but continue with what we have
+            if dedup_result["shortfall"] > 0:
+                yield sse({"type": "shortfall_notice",
+                           "message": dedup_result["message"],
+                           "found": len(resolved_topics),
+                           "requested": count})
+
+        topics = resolved_topics
 
         # ── Step 2: Campaign Brief (sync → executor) ─────────────────────────
         try:
@@ -830,25 +1087,60 @@ class NvidiaRAG:
         })
 
         # ── Step 3: Generate each post ─────────────────────────────────────────
-        system_base = load_instagram_prompt(
-            include_hook=include_hook,
-            include_category=include_category,
-            include_9x16=include_9x16,
-            freshness=freshness,
+        # Cache web results per unique query so repeated topics (same user topic, N posts)
+        # don't hammer Tavily N times with the identical query.
+        _web_cache: dict = {}
+
+        # Build XML system prompt once for the batch using caller-supplied profile args
+        default_fields = [
+            {"id": "title",           "label": "Title",           "aiHint": "Punchy headline.", "type": "text",         "enabled": True},
+            {"id": "highlight_words", "label": "Highlight Words", "aiHint": "4-5 high-signal words from the title, comma-separated.", "type": "text", "enabled": True},
+            {"id": "caption",         "label": "Caption",         "aiHint": "800-1200 character social media caption.", "type": "text",         "enabled": True},
+            {"id": "image_prompt_1x1","label": "Image Prompt",    "aiHint": "Photorealistic editorial image prompt. No text in image.", "type": "image_prompt", "enabled": True},
+        ]
+        _output_fields = getattr(self, '_batch_output_fields', default_fields)
+        _system_prompt = getattr(self, '_batch_system_prompt',
+            "You are an expert social media content creator. "
+            "Create high-quality, factual, engaging content based on the research provided. "
+            "Every claim must be backed by the sources in the research context."
+        )
+        _tone             = getattr(self, '_batch_tone', tone)
+        _custom_instr     = getattr(self, '_batch_custom_instructions', custom_instructions)
+        _title_min        = getattr(self, '_batch_title_min_length', 60)
+        _title_max        = getattr(self, '_batch_title_max_length', 110)
+        # "news" = Tavily news topic (time-sensitive stories)
+        # "general" = Tavily general web search (evergreen facts, profiles, stats)
+        _is_news          = getattr(self, '_batch_search_mode', 'news') == 'news'
+        field_ids         = [f.get("id") or f.get("key","") for f in _output_fields if f.get("enabled", True)]
+
+        system_base = build_xml_system_prompt(
+            system_prompt       = _system_prompt,
+            output_fields       = _output_fields,
+            tone                = _tone,
+            search_enabled      = True,
+            custom_instructions = _custom_instr,
+            freshness           = freshness,
+            title_min_length    = _title_min,
+            title_max_length    = _title_max,
         )
         citation_rule = (
-            "\n\nCRITICAL SOURCE RULE: Every fact MUST come from the research context above. "
-            "Each source is labeled [SOURCE: Publisher | url]. Cite inline like 'per Reuters'. "
-            "If a fact is NOT in the context — do NOT include it. No fabrication."
+            "\n\nSOURCE RULE: Every fact MUST come from the research context. "
+            "Each source is labeled [SOURCE: Publisher | url]. Cite inline. No fabrication."
         )
 
         for i, topic_item in enumerate(topics):
-            assignment = angle_map.get(i, {
-                "angle": CAMPAIGN_ANGLES[i % len(CAMPAIGN_ANGLES)],
-                "angle_rationale": ""
-            })
-            angle      = assignment.get("angle", CAMPAIGN_ANGLES[i % len(CAMPAIGN_ANGLES)])
-            angle_note = ANGLE_PROMPTS.get(angle, "")
+            log.info("Post %d/%d starting: '%s'", i + 1, len(topics), topic_item["title"][:60])
+            try:
+                assignment = angle_map.get(i, {
+                    "angle": CAMPAIGN_ANGLES[i % len(CAMPAIGN_ANGLES)],
+                    "angle_rationale": ""
+                })
+                angle      = assignment.get("angle", CAMPAIGN_ANGLES[i % len(CAMPAIGN_ANGLES)])
+                angle_note = ANGLE_PROMPTS.get(angle, "")
+            except Exception as e:
+                log.error("Post %d angle assignment failed: %s", i, e)
+                angle      = CAMPAIGN_ANGLES[i % len(CAMPAIGN_ANGLES)]
+                angle_note = ANGLE_PROMPTS.get(angle, "")
 
             yield sse({
                 "type":       "post_started",
@@ -857,91 +1149,133 @@ class NvidiaRAG:
                 "topic":      topic_item["title"],
             })
 
-            # Web fetch (sync → executor)
             try:
-                raw_results, sources_meta, tavily_answer = await loop.run_in_executor(
-                    None,
-                    lambda t=topic_item: self._fetch_web_elite(
-                        build_search_query(t["title"], freshness),
-                        freshness=freshness,
-                        is_news=True,
-                    )
+                # ── Web fetch (cache repeated queries) ──────────────────────
+                _query = build_search_query(topic_item["title"], freshness)
+                if _query in _web_cache:
+                    raw_results, sources_meta, tavily_answer, context = _web_cache[_query]
+                    log.info("Web cache hit for post %d: '%s'", i, _query[:60])
+                else:
+                    try:
+                        raw_results, sources_meta, tavily_answer = await loop.run_in_executor(
+                            None,
+                            lambda t=topic_item: self._fetch_web_elite(
+                                build_search_query(t["title"], freshness),
+                                freshness=freshness,
+                                is_news=_is_news,
+                            )
+                        )
+                    except Exception as e:
+                        yield sse({"type": "post_error", "post_index": i,
+                                   "error": classify_error(e), "topic": topic_item["title"]})
+                        continue
+
+                    context = build_sourced_context(raw_results) if raw_results else ""
+                    if not context and raw_results and self._cfg_cache["tavily"].get("include_domains"):
+                        log.warning("Domain filter yielded no content for '%s'. Retrying without.", topic_item["title"][:60])
+                        try:
+                            raw_results, sources_meta, tavily_answer = await loop.run_in_executor(
+                                None,
+                                lambda t=topic_item: self._fetch_web_elite(
+                                    build_search_query(t["title"], freshness),
+                                    freshness=freshness, is_news=False,
+                                    max_results_override=self._cfg_cache["tavily"].get("max_results", 10),
+                                )
+                            )
+                            context = build_sourced_context(raw_results) if raw_results else ""
+                        except Exception:
+                            pass
+                    if not context:
+                        context = f"Topic: {topic_item['title']}\nNo verified sources found."
+                    elif tavily_answer:
+                        context = f"[TAVILY VERIFIED SUMMARY]\n{tavily_answer}\n\n---\n\n{context}"
+                    _web_cache[_query] = (raw_results, sources_meta, tavily_answer, context)
+
+                yield sse({"type": "web_fetched", "post_index": i, "source_count": len(sources_meta)})
+
+                # ── Build prompt ─────────────────────────────────────────────
+                d = get_date_strings()
+                angle_injection = (
+                    f"\n\n--- CAMPAIGN DIRECTIVE ---\n"
+                    f"This is post {i + 1} of {len(topics)} in the '{category}' series.\n"
+                    f"Assigned angle: {str(angle).upper().replace('_', ' ')}.\n"
+                    f"Angle instruction: {angle_note}\n"
+                    f"Series tone: {brief.get('series_tone', 'authoritative')}.\n"
+                    f"Today's date: {d['today']}.\n"
+                    f"--- END DIRECTIVE ---"
                 )
-            except Exception as e:
-                yield sse({"type": "post_error", "post_index": i,
-                           "error": classify_error(e), "topic": topic_item["title"]})
-                continue
+                _sys_final = system_base + angle_injection + citation_rule
+                prompt = ChatPromptTemplate.from_messages([
+                    ("system", _sys_final),
+                    ("human", "Generate content about: {question}\n\nResearch context:\n{context}")
+                ])
+                chain = prompt | self.llm | StrOutputParser()
 
-            yield sse({"type": "web_fetched", "post_index": i, "source_count": len(sources_meta)})
+                # ── Token streaming ──────────────────────────────────────────
+                full_text = ""
+                try:
+                    async for chunk in chain.astream(
+                        {"question": topic_item["title"], "context": context}
+                    ):
+                        full_text += chunk
+                        yield sse({"type": "post_chunk", "post_index": i, "text": chunk})
+                except asyncio.CancelledError:
+                    log.info("SSE stream cancelled during post %d.", i)
+                    raise
+                except Exception as e:
+                    log.error("LLM streaming failed for post %d: %s", i, e)
+                    yield sse({"type": "post_error", "post_index": i,
+                               "error": classify_error(e), "topic": topic_item["title"]})
+                    continue
 
-            # Build context
-            if not raw_results:
-                context = f"Topic: {topic_item['title']}\nNo verified sources found."
-            else:
-                context = build_sourced_context(raw_results)
-                if tavily_answer:
-                    context = f"[TAVILY VERIFIED SUMMARY]\n{tavily_answer}\n\n---\n\n{context}"
+                # ── Parse & save ─────────────────────────────────────────────
+                parsed        = parse_xml_response(full_text, field_ids)
+                parsed["raw"] = full_text
+                cfg_label     = FRESHNESS_CONFIG.get(freshness, FRESHNESS_CONFIG["2days"])["label"]
 
-            # Angle-injected system prompt
-            d = get_date_strings()
-            angle_injection = (
-                f"\n\n--- CAMPAIGN DIRECTIVE ---\n"
-                f"This is post {i + 1} of {len(topics)} in the '{category}' series.\n"
-                f"Assigned angle: {angle.upper().replace('_', ' ')}.\n"
-                f"Angle instruction: {angle_note}\n"
-                f"Series tone: {brief.get('series_tone', 'authoritative')}.\n"
-                f"Today's date: {d['today']}.\n"
-                f"--- END DIRECTIVE ---"
-            )
-            system_final = system_base + angle_injection + citation_rule
+                try:
+                    post_id = await loop.run_in_executor(
+                        None,
+                        lambda p=parsed, sm=sources_meta, ti=topic_item: _storage.save_post(
+                            ti["title"], "instagram", p, sm
+                        )
+                    )
+                except Exception:
+                    post_id = None
 
-            prompt = ChatPromptTemplate.from_messages([
-                ("system", system_final),
-                ("human", "forge a post about {question}\n\nResearch context:\n{context}")
-            ])
-            chain = prompt | self.llm | StrOutputParser()
+                try:
+                    await loop.run_in_executor(
+                        None,
+                        lambda ti=topic_item, pid=post_id, ang=angle: _dedup.record_post(
+                            post_id    = pid or f"local_{i}",
+                            title      = ti["title"],
+                            url        = ti.get("url", ""),
+                            signature  = ti.get("_dedup_signature", ""),
+                            cluster_id = ti.get("_dedup_cluster_id", ""),
+                            angle_type = ang,
+                        )
+                    )
+                except Exception as _dedup_err:
+                    log.warning("dedup record_post failed (non-fatal): %s", _dedup_err)
 
-            # Token streaming
-            full_text = ""
-            try:
-                async for chunk in chain.astream(
-                    {"question": topic_item["title"], "context": context}
-                ):
-                    full_text += chunk
-                    yield sse({"type": "post_chunk", "post_index": i, "text": chunk})
+                yield sse({
+                    "type":           "post_completed",
+                    "post_index":     i,
+                    "angle":          angle,
+                    "content":        parsed,
+                    "sources":        sources_meta,
+                    "freshness":      cfg_label,
+                    "original_topic": topic_item["title"],
+                    "source_url":     topic_item.get("url", ""),
+                    "post_id":        post_id,
+                })
+                log.info("Post %d/%d completed.", i + 1, len(topics))
+
             except asyncio.CancelledError:
-                log.info("SSE stream cancelled by client during post %d.", i)
                 raise
             except Exception as e:
+                log.error("Unhandled error in post %d/%d: %s", i + 1, len(topics), e, exc_info=True)
                 yield sse({"type": "post_error", "post_index": i,
                            "error": classify_error(e), "topic": topic_item["title"]})
-                continue
-
-            # Parse & save
-            parsed       = parse_code_blocks(full_text)
-            parsed["raw"] = full_text
-            cfg_label     = FRESHNESS_CONFIG.get(freshness, FRESHNESS_CONFIG["2days"])["label"]
-
-            try:
-                post_id = await loop.run_in_executor(
-                    None,
-                    lambda p=parsed, sm=sources_meta, ti=topic_item: _storage.save_post(
-                        ti["title"], "instagram", p, sm
-                    )
-                )
-            except Exception:
-                post_id = None
-
-            yield sse({
-                "type":           "post_completed",
-                "post_index":     i,
-                "angle":          angle,
-                "content":        parsed,
-                "sources":        sources_meta,
-                "freshness":      cfg_label,
-                "original_topic": topic_item["title"],
-                "source_url":     topic_item.get("url", ""),
-                "post_id":        post_id,
-            })
 
         yield sse({"type": "batch_done"})
