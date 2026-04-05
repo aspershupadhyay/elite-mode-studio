@@ -90,8 +90,21 @@ async function startBackend() {
         console.log('[main] Port 8000 in use — reusing');
         return;
     }
-    const backendPath = path_1.default.join(__dirname, 'backend');
-    backendProcess = (0, child_process_1.spawn)('python3', ['-m', 'uvicorn', 'api:app', '--host', '127.0.0.1', '--port', '8000'], { cwd: backendPath, stdio: 'pipe' });
+    if (isDev) {
+        // Dev mode: use system Python (unchanged, fast iteration)
+        const backendPath = path_1.default.join(__dirname, 'backend');
+        backendProcess = (0, child_process_1.spawn)('python3', ['-m', 'uvicorn', 'api:app', '--host', '127.0.0.1', '--port', '8000'], {
+            cwd: backendPath, stdio: 'pipe',
+        });
+    }
+    else {
+        // Production: use the PyInstaller binary bundled in extraResources/api_server/
+        const binaryName = process.platform === 'win32' ? 'api_server.exe' : 'api_server';
+        const binaryPath = path_1.default.join(process.resourcesPath, 'api_server', binaryName);
+        backendProcess = (0, child_process_1.spawn)(binaryPath, ['--host', '127.0.0.1', '--port', '8000'], {
+            stdio: 'pipe',
+        });
+    }
     backendProcess.stdout?.on('data', (d) => console.log('[backend]', d.toString()));
     backendProcess.stderr?.on('data', (d) => console.error('[backend]', d.toString()));
 }
@@ -541,7 +554,7 @@ electron_1.ipcMain.handle('save-png-batch', async (_event, { files }) => {
     if (!files?.length || !mainWindow)
         return { canceled: true };
     const result = await electron_1.dialog.showOpenDialog(mainWindow, {
-        title: 'Select folder to save exported files',
+        title: `Choose folder to save ${files.length} file${files.length !== 1 ? 's' : ''}`,
         properties: ['openDirectory', 'createDirectory'], buttonLabel: 'Save Here',
     });
     if (result.canceled || !result.filePaths[0])

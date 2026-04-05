@@ -66,8 +66,22 @@ function isPortInUse(port: number): Promise<boolean> {
 async function startBackend(): Promise<void> {
   const inUse = await isPortInUse(8000)
   if (inUse) { console.log('[main] Port 8000 in use — reusing'); return }
-  const backendPath = path.join(__dirname, 'backend')
-  backendProcess = spawn('python3', ['-m', 'uvicorn', 'api:app', '--host', '127.0.0.1', '--port', '8000'], { cwd: backendPath, stdio: 'pipe' })
+
+  if (isDev) {
+    // Dev mode: use system Python (unchanged, fast iteration)
+    const backendPath = path.join(__dirname, 'backend')
+    backendProcess = spawn('python3', ['-m', 'uvicorn', 'api:app', '--host', '127.0.0.1', '--port', '8000'], {
+      cwd: backendPath, stdio: 'pipe',
+    })
+  } else {
+    // Production: use the PyInstaller binary bundled in extraResources/api_server/
+    const binaryName = process.platform === 'win32' ? 'api_server.exe' : 'api_server'
+    const binaryPath = path.join(process.resourcesPath, 'api_server', binaryName)
+    backendProcess = spawn(binaryPath, ['--host', '127.0.0.1', '--port', '8000'], {
+      stdio: 'pipe',
+    })
+  }
+
   backendProcess.stdout?.on('data', (d: Buffer) => console.log('[backend]', d.toString()))
   backendProcess.stderr?.on('data', (d: Buffer) => console.error('[backend]', d.toString()))
 }
@@ -480,7 +494,7 @@ ipcMain.on('renderer-log', (_event, args: unknown[]) => {
 ipcMain.handle('save-png-batch', async (_event: IpcMainInvokeEvent, { files }: SavePngBatchRequest): Promise<SavePngBatchResult> => {
   if (!files?.length || !mainWindow) return { canceled: true }
   const result = await dialog.showOpenDialog(mainWindow, {
-    title: 'Select folder to save exported files',
+    title: `Choose folder to save ${files.length} file${files.length !== 1 ? 's' : ''}`,
     properties: ['openDirectory', 'createDirectory'], buttonLabel: 'Save Here',
   })
   if (result.canceled || !result.filePaths[0]) return { canceled: true }
