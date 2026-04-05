@@ -7,13 +7,16 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build:electron": "tsc -p tsconfig.electron.json",
+    "build:backend": "cd backend && pyinstaller backend.spec",
+    "generate-icons": "node scripts/generate-icons.js",
     "dev": "npm run build:electron && concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
     "build": "npm run build:electron && vite build",
     "electron": "npm run build:electron && electron .",
     "start": "npm run build:electron && vite build && electron .",
-    "dist": "npm run build && electron-builder --mac dmg",
-    "dist:dir": "npm run build && electron-builder --mac dir",
-    "generate-icons": "node scripts/generate-icons.js"
+    "dist:mac": "npm run build:backend && npm run build && electron-builder --mac",
+    "dist:win": "npm run build:backend && npm run build && electron-builder --win",
+    "dist:linux": "npm run build:backend && npm run build && electron-builder --linux",
+    "dist": "npm run dist:mac"
   },
   "build": {
     "appId": "com.creatoros.app",
@@ -36,18 +39,12 @@
     ],
     "extraResources": [
       {
-        "from": "backend",
-        "to": "backend",
-        "filter": [
-          "**/*",
-          "!**/__pycache__/**",
-          "!**/*.pyc",
-          "!.env",
-          "!search_config.json",
-          "!data/**",
-          "!venv/**",
-          "!.venv/**"
-        ]
+        "from": "backend/dist/api_server",
+        "to": "api_server"
+      },
+      {
+        "from": "docs/elite_mode_instruction.md",
+        "to": "elite_mode_instruction.md"
       }
     ],
     "mac": {
@@ -85,6 +82,35 @@
           "path": "/Applications"
         }
       ]
+    },
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "linux": {
+      "icon": "build/icon.png",
+      "category": "Office",
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico"
     }
   },
   "dependencies": {
