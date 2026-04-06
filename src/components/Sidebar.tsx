@@ -1,19 +1,15 @@
 /**
- * Sidebar — Notion-style collapsible navigation
- * - Collapsed: 48px icon-only rail
- * - Expanded:  200px full labels
- * - Sections are individually collapsible
- * - Smooth CSS transition, no layout jank
+ * Sidebar — dual-column navigation
+ * Left: 52px icon rail (always visible)
+ * Right: 220px nav panel (collapses to hidden)
  */
 
 import React, { useState } from 'react'
 import {
   Globe, FileText, Flame, Settings, History,
-  PenTool, Grid, ChevronLeft, ChevronRight,
-  ChevronDown, LogOut,
+  PenTool, Grid, LogOut, ChevronsUpDown,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import { DS } from '../design-system'
 import type { AuthUser } from '../types/ipc'
 
 export type PageId =
@@ -34,9 +30,9 @@ interface NavItem {
 }
 
 interface NavSection {
-  key:   string
+  key:    string
   label?: string
-  items: NavItem[]
+  items:  NavItem[]
 }
 
 const SECTIONS: NavSection[] = [
@@ -72,6 +68,9 @@ const SECTIONS: NavSection[] = [
   },
 ]
 
+// Flat list of all items for icon rail
+const ALL_ITEMS: NavItem[] = SECTIONS.flatMap(s => s.items)
+
 interface SidebarProps {
   current:        PageId
   onNav:          (id: PageId) => void
@@ -80,230 +79,335 @@ interface SidebarProps {
   onLogout?:      () => void
 }
 
-export default function Sidebar({ current, onNav, backendStatus, user, onLogout }: SidebarProps): React.ReactElement {
-  const [collapsed,         setCollapsed]         = useState(false)
-  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set())
-
-  const W = collapsed ? 48 : 200
+export default function Sidebar({
+  current, onNav, backendStatus, user, onLogout,
+}: SidebarProps): React.ReactElement {
+  const [panelOpen, setPanelOpen] = useState(true)
 
   const statusColor =
-    backendStatus === 'ok'       ? 'var(--accent)'       :
-    backendStatus === 'degraded' ? 'var(--status-amber)'  :
+    backendStatus === 'ok'       ? '#22c55e'             :
+    backendStatus === 'degraded' ? 'var(--status-amber)' :
                                    'var(--status-red)'
 
-  const statusLabel =
-    backendStatus === 'ok'       ? 'Online'        :
-    backendStatus === 'degraded' ? 'Keys missing'  :
-    backendStatus === 'checking' ? 'Connecting…'   : 'Offline'
+  /* ── Icon rail ── */
+  const rail = (
+    <div style={{
+      width: 52,
+      minWidth: 52,
+      background: 'var(--surface-0)',
+      borderRight: '1px solid var(--border-subtle)',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      paddingTop: 44,
+      paddingBottom: 0,
+      flexShrink: 0,
+      gap: 2,
+    }}>
+      {/* Logo mark */}
+      <div
+        className="titlebar-drag-region"
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: 52,
+          height: 44,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <div style={{
+          width: 28,
+          height: 28,
+          borderRadius: 8,
+          background: 'var(--accent)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontWeight: 800,
+          fontSize: 13,
+          color: 'var(--accent-fg)',
+          letterSpacing: '-0.03em',
+          flexShrink: 0,
+          cursor: 'pointer',
+        }}
+          onClick={() => setPanelOpen(v => !v)}
+        >
+          C
+        </div>
+      </div>
 
-  function toggleSection(key: string): void {
-    setCollapsedSections(prev => {
-      const next = new Set(prev)
-      next.has(key) ? next.delete(key) : next.add(key)
-      return next
-    })
-  }
+      {/* Nav icons */}
+      <div style={{ flex: 1, width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, paddingTop: 4 }}>
+        {ALL_ITEMS.map(({ id, icon: Icon, label }) => {
+          const isActive = current === id
+          return (
+            <button
+              key={id}
+              title={label}
+              onClick={() => { onNav(id); if (!panelOpen) setPanelOpen(true) }}
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 10,
+                border: isActive ? '1px solid var(--border-default)' : '1px solid transparent',
+                background: isActive ? 'var(--surface-2)' : 'transparent',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                color: isActive ? 'var(--text-primary)' : 'var(--text-tertiary)',
+                transition: 'all 0.12s ease',
+                boxShadow: isActive ? '0 1px 3px rgba(0,0,0,0.10)' : 'none',
+              }}
+              onMouseEnter={e => {
+                if (!isActive) {
+                  e.currentTarget.style.background = 'var(--surface-3)'
+                  e.currentTarget.style.color = 'var(--text-secondary)'
+                }
+              }}
+              onMouseLeave={e => {
+                if (!isActive) {
+                  e.currentTarget.style.background = 'transparent'
+                  e.currentTarget.style.color = 'var(--text-tertiary)'
+                }
+              }}
+            >
+              <Icon size={15} />
+            </button>
+          )
+        })}
+      </div>
 
-  return (
-    <aside style={{
-      width: W,
-      minWidth: W,
-      maxWidth: W,
+      {/* Status dot at bottom */}
+      <div style={{
+        width: '100%',
+        height: 48,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexShrink: 0,
+        borderTop: '1px solid var(--border-subtle)',
+      }}>
+        <div style={{
+          width: 7,
+          height: 7,
+          borderRadius: '50%',
+          background: statusColor,
+          boxShadow: `0 0 6px ${statusColor}55`,
+        }} />
+      </div>
+    </div>
+  )
+
+  /* ── Nav panel ── */
+  const panel = panelOpen ? (
+    <div style={{
+      width: 220,
+      minWidth: 220,
       background: 'var(--surface-1)',
-      borderRight: '0.5px solid var(--border-subtle)',
+      borderRight: '1px solid var(--border-subtle)',
       display: 'flex',
       flexDirection: 'column',
       flexShrink: 0,
       overflow: 'hidden',
-      transition: 'width 0.18s cubic-bezier(0.4,0,0.2,1), min-width 0.18s cubic-bezier(0.4,0,0.2,1)',
     }}>
 
-      {/* ── Header: logo + collapse toggle ─────────────────────────── */}
+      {/* App header */}
       <div
         className="titlebar-drag-region"
         style={{
-          paddingTop: 38,
-          paddingBottom: 10,
-          paddingLeft: collapsed ? 0 : 14,
-          paddingRight: collapsed ? 0 : 10,
-          borderBottom: '0.5px solid var(--border-subtle)',
+          height: 44,
+          display: 'flex',
+          alignItems: 'center',
+          padding: '0 14px',
+          borderBottom: '1px solid var(--border-subtle)',
+          gap: 10,
+          flexShrink: 0,
+        }}
+      >
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p style={{
+            fontSize: 13,
+            fontWeight: 700,
+            color: 'var(--text-primary)',
+            margin: 0,
+            letterSpacing: '-0.02em',
+          }}>
+            CreatorOS
+          </p>
+          <p style={{
+            fontSize: 10,
+            color: 'var(--text-tertiary)',
+            margin: 0,
+          }}>
+            AI Content Suite
+          </p>
+        </div>
+      </div>
+
+      {/* Nav items */}
+      <nav style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '8px 8px 4px' }}>
+        {SECTIONS.map(section => (
+          <div key={section.key} style={{ marginBottom: 4 }}>
+            {section.label && (
+              <p style={{
+                fontSize: 10,
+                fontWeight: 600,
+                color: 'var(--text-tertiary)',
+                textTransform: 'uppercase',
+                letterSpacing: '0.07em',
+                margin: '8px 6px 4px',
+              }}>
+                {section.label}
+              </p>
+            )}
+            {section.items.map(({ id, icon: Icon, label }) => {
+              const isActive = current === id
+              return (
+                <button
+                  key={id}
+                  onClick={() => onNav(id)}
+                  style={{
+                    width: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    padding: '8px 10px',
+                    borderRadius: 10,
+                    border: isActive ? '1px solid var(--border-default)' : '1px solid transparent',
+                    background: isActive ? 'var(--surface-2)' : 'transparent',
+                    color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)',
+                    cursor: 'pointer',
+                    fontSize: 13,
+                    fontWeight: isActive ? 600 : 400,
+                    letterSpacing: '-0.01em',
+                    textAlign: 'left',
+                    transition: 'all 0.12s ease',
+                    boxShadow: isActive ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                  }}
+                  onMouseEnter={e => {
+                    if (!isActive) {
+                      e.currentTarget.style.background = 'var(--surface-3)'
+                      e.currentTarget.style.color = 'var(--text-primary)'
+                    }
+                  }}
+                  onMouseLeave={e => {
+                    if (!isActive) {
+                      e.currentTarget.style.background = 'transparent'
+                      e.currentTarget.style.color = 'var(--text-secondary)'
+                    }
+                  }}
+                >
+                  <Icon size={15} style={{ flexShrink: 0, opacity: isActive ? 1 : 0.7 }} />
+                  <span>{label}</span>
+                </button>
+              )
+            })}
+          </div>
+        ))}
+      </nav>
+
+      {/* User footer */}
+      {user && (
+        <div style={{
+          borderTop: '1px solid var(--border-subtle)',
+          padding: '10px 10px',
           flexShrink: 0,
           display: 'flex',
           alignItems: 'center',
-          justifyContent: collapsed ? 'center' : 'space-between',
-          gap: 8,
-        }}
-      >
-        {/* Logo mark — always visible */}
-        <div style={{
-          width: 26, height: 26, borderRadius: 7,
-          background: 'var(--accent)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontWeight: 800, fontSize: 12, color: 'var(--accent-fg)',
-          letterSpacing: '-0.03em', flexShrink: 0,
-          cursor: collapsed ? 'pointer' : 'default',
-        }}
-          onClick={() => collapsed && setCollapsed(false)}
-        >
-          C
-        </div>
-
-        {/* Name + status — hidden when collapsed */}
-        {!collapsed && (
-          <>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', margin: 0, letterSpacing: '-0.02em', lineHeight: 1.2 }}>
-                CreatorOS
-              </p>
-              <p style={{ fontSize: 10, color: 'var(--text-tertiary)', margin: 0, letterSpacing: '0.01em' }}>
-                AI Content Suite
-              </p>
+          gap: 10,
+        }}>
+          {/* Avatar */}
+          {user.avatar_url ? (
+            <img
+              src={user.avatar_url}
+              alt=""
+              style={{ width: 32, height: 32, borderRadius: '50%', flexShrink: 0, objectFit: 'cover', border: '1px solid var(--border-default)' }}
+              onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
+            />
+          ) : (
+            <div style={{
+              width: 32,
+              height: 32,
+              borderRadius: '50%',
+              flexShrink: 0,
+              background: 'var(--accent)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: 12,
+              fontWeight: 700,
+              color: 'var(--accent-fg)',
+            }}>
+              {(user.name || user.email).charAt(0).toUpperCase()}
             </div>
-
-            {/* Status dot */}
-            {backendStatus && backendStatus !== 'checking' && (
-              <div style={{
-                width: 6, height: 6, borderRadius: '50%',
-                background: statusColor, flexShrink: 0,
-                boxShadow: `0 0 6px ${statusColor}`,
-              }} />
-            )}
-          </>
-        )}
-      </div>
-
-      {/* ── Collapse / expand toggle button ────────────────────────── */}
-      <button
-        onClick={() => setCollapsed(c => !c)}
-        title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        style={{
-          display: 'flex', alignItems: 'center',
-          justifyContent: collapsed ? 'center' : 'flex-end',
-          padding: collapsed ? '6px 0' : '6px 10px',
-          background: 'none', border: 'none', cursor: 'pointer',
-          color: 'var(--text-tertiary)',
-          borderBottom: '0.5px solid var(--border-subtle)',
-          flexShrink: 0,
-          transition: 'color 0.1s',
-        }}
-        onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-secondary)' }}
-        onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-tertiary)' }}
-      >
-        {collapsed
-          ? <ChevronRight size={13} />
-          : (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'inherit' }}>
-              <ChevronLeft size={13} />
-              {!collapsed && <span style={{ fontSize: 10, letterSpacing: '0.02em' }}>Collapse</span>}
-            </div>
-          )
-        }
-      </button>
-
-      {/* ── Navigation ───────────────────────────────────────────────── */}
-      <nav style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', paddingTop: 6, paddingBottom: 6 }}>
-        {SECTIONS.map(section => {
-          const isSectionCollapsed = collapsedSections.has(section.key)
-          return (
-            <div key={section.key}>
-
-              {/* Section header — only shown when sidebar is expanded and section has a label */}
-              {section.label && !collapsed && (
-                <button
-                  onClick={() => toggleSection(section.key)}
-                  style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    width: '100%', padding: '5px 14px 3px',
-                    background: 'none', border: 'none', cursor: 'pointer',
-                    color: 'var(--text-tertiary)',
-                  }}
-                >
-                  <span style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                    {section.label}
-                  </span>
-                  <ChevronDown
-                    size={11}
-                    style={{
-                      transition: 'transform 0.15s',
-                      transform: isSectionCollapsed ? 'rotate(-90deg)' : 'none',
-                    }}
-                  />
-                </button>
-              )}
-
-              {/* Items */}
-              {!isSectionCollapsed && section.items.map(({ id, icon: Icon, label }) => {
-                const isActive = current === id
-                return (
-                  <button
-                    key={id}
-                    title={collapsed ? label : undefined}
-                    className={`nav-item${isActive ? ' active' : ''}`}
-                    onClick={() => onNav(id)}
-                    style={{
-                      justifyContent: collapsed ? 'center' : undefined,
-                      paddingLeft: collapsed ? 0 : undefined,
-                      paddingRight: collapsed ? 0 : undefined,
-                    }}
-                  >
-                    <span className="nav-icon">
-                      <Icon size={14} />
-                    </span>
-                    {!collapsed && (
-                      <span style={{ fontSize: 13, letterSpacing: '-0.01em' }}>{label}</span>
-                    )}
-                  </button>
-                )
-              })}
-            </div>
-          )
-        })}
-      </nav>
-
-      {/* ── User + logout ─────────────────────────────────────────────── */}
-      {user && (
-        <div style={{ borderTop: '0.5px solid var(--border-subtle)', padding: collapsed ? '8px 0' : '8px 12px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: collapsed ? 'center' : 'space-between', gap: 8 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
-            {user.avatar_url ? (
-              <img src={user.avatar_url} alt="" style={{ width: 22, height: 22, borderRadius: '50%', flexShrink: 0, objectFit: 'cover' }} onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }} />
-            ) : (
-              <div style={{ width: 22, height: 22, borderRadius: '50%', flexShrink: 0, background: 'var(--green)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: 'var(--accent-fg)' }}>
-                {(user.name || user.email).charAt(0).toUpperCase()}
-              </div>
-            )}
-            {!collapsed && (
-              <div style={{ minWidth: 0 }}>
-                <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-primary)', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.name || user.email}</p>
-                <p style={{ fontSize: 10, color: 'var(--text-tertiary)', margin: 0 }}>{user.provider}</p>
-              </div>
-            )}
-          </div>
-          {!collapsed && onLogout && (
-            <button onClick={onLogout} title="Sign out" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', padding: 4, borderRadius: 6, display: 'flex', alignItems: 'center', flexShrink: 0, transition: 'color 0.1s' }}
-              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--status-red)' }}
-              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-tertiary)' }}>
-              <LogOut size={13} />
-            </button>
           )}
+
+          {/* Name */}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {user.name || user.email}
+            </p>
+            <p style={{ fontSize: 10, color: 'var(--text-tertiary)', margin: 0 }}>
+              {user.provider}
+            </p>
+          </div>
+
+          {/* Actions */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0 }}>
+            {onLogout && (
+              <button
+                onClick={onLogout}
+                title="Sign out"
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: 'var(--text-tertiary)',
+                  padding: 5,
+                  borderRadius: 7,
+                  display: 'flex',
+                  alignItems: 'center',
+                  transition: 'color 0.1s',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.color = 'var(--status-red)' }}
+                onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-tertiary)' }}
+              >
+                <LogOut size={13} />
+              </button>
+            )}
+            <button
+              onClick={() => setPanelOpen(false)}
+              title="Collapse"
+              style={{
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                color: 'var(--text-tertiary)',
+                padding: 5,
+                borderRadius: 7,
+                display: 'flex',
+                alignItems: 'center',
+                transition: 'color 0.1s',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.color = 'var(--text-secondary)' }}
+              onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-tertiary)' }}
+            >
+              <ChevronsUpDown size={13} />
+            </button>
+          </div>
         </div>
       )}
+    </div>
+  ) : null
 
-      {/* ── Backend status footer ─────────────────────────────────────── */}
-      <div style={{
-        borderTop: '0.5px solid var(--border-subtle)',
-        padding: collapsed ? '8px 0' : '8px 14px',
-        flexShrink: 0,
-        display: 'flex', alignItems: 'center',
-        justifyContent: collapsed ? 'center' : 'flex-start',
-        gap: 7,
-      }}>
-        <div style={{ width: 5, height: 5, borderRadius: '50%', background: statusColor, flexShrink: 0 }} />
-        {!collapsed && (
-          <span style={{ fontSize: 11, color: backendStatus === 'ok' ? DS.text3 : statusColor, letterSpacing: '0.01em' }}>
-            {statusLabel}
-          </span>
-        )}
-      </div>
+  return (
+    <aside style={{ display: 'flex', flexDirection: 'row', flexShrink: 0, position: 'relative' }}>
+      {rail}
+      {panel}
     </aside>
   )
 }
