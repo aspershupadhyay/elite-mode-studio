@@ -16,9 +16,9 @@ import { apiFetch, apiPost, apiStream } from '../../api'
 import { getTemplates } from '../../studio/data/templateStorage'
 import { getActiveProfile, getProfiles, setActiveProfile } from '../../utils/profileStorage'
 import {
-  Instagram, Twitter, Linkedin, Lock,
+  Instagram, Twitter, Linkedin,
   TrendingUp, RefreshCw, Layers, StopCircle,
-  Calendar, Zap, LayoutTemplate,
+  Calendar, Zap,
 } from 'lucide-react'
 import type { Post, Template } from '@/types/domain'
 import { type OutSettings } from './PostResultsList'
@@ -34,10 +34,30 @@ interface PlatformDef {
 }
 
 const PLATFORMS: PlatformDef[] = [
-  { id: 'instagram', label: 'Instagram', icon: Instagram, active: true  },
-  { id: 'twitter',   label: 'Twitter/X', icon: Twitter,   active: false },
-  { id: 'linkedin',  label: 'LinkedIn',  icon: Linkedin,  active: false },
+  { id: 'instagram', label: 'Instagram', icon: Instagram, active: true },
+  { id: 'twitter',   label: 'Twitter/X', icon: Twitter,   active: true },
+  { id: 'linkedin',  label: 'LinkedIn',  icon: Linkedin,  active: true },
 ]
+
+interface PlatformMeta { placeholder: string; hint: string; brandColor: string }
+
+const PLATFORM_META: Record<string, PlatformMeta> = {
+  instagram: {
+    placeholder: 'What story do you want to tell on Instagram?',
+    hint: 'Visual-first · Hashtags · Reels-ready',
+    brandColor: '#E1306C',
+  },
+  twitter: {
+    placeholder: "What's your take? Drop the topic...",
+    hint: 'Concise · Threads · Real-time engagement',
+    brandColor: '#1DA1F2',
+  },
+  linkedin: {
+    placeholder: 'Share your professional insight or industry perspective...',
+    hint: 'Thought leadership · Professional network · Articles',
+    brandColor: '#0077B5',
+  },
+}
 
 const CATEGORIES_FALLBACK = [
   'AI & TECH',
@@ -478,47 +498,60 @@ export default function Forge({ onSendToStudio, onBatchToStudio, generatedImages
   const completedCount = streamPosts.filter(p => p.status === 'done').length
   const errorCount     = streamPosts.filter(p => p.status === 'error').length
 
-  // ── Mode: 'post' or 'series' ─────────────────────────────────────────────
-  const [mode, setMode] = useState<'post' | 'series'>('post')
+  // ── Derived ──────────────────────────────────────────────────────────────
+  const count       = Math.max(1, parseInt(campaignCount) || 1)
+  const isSeries    = count > 1
+  const meta        = PLATFORM_META[platform]
+  const fieldCount  = activeProfile.outputFields.filter(f => f.enabled).length
+  const canGenerate = isSeries ? true : topic.trim().length > 0
+
+  function handleGenerate(): void {
+    if (!canGenerate || streamActive) return
+    if (topic.trim()) {
+      handleSingleForge()
+    } else {
+      runCampaign()
+    }
+  }
+
+  const streamingPost = streamPosts.find(p => p.status === 'streaming')
 
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <PageShell title="Forge" subtitle="AI Content Generator">
-      <div style={{ maxWidth: 720 }}>
+    <PageShell title="Forge" subtitle="">
+      <div style={{ maxWidth: 760 }}>
 
         {/* ── Platform tabs ──────────────────────────────────────────────── */}
-        <div style={{ display: 'flex', gap: 6, marginBottom: 28 }}>
-          {PLATFORMS.map(({ id, label, icon: Icon, active }) => {
-            const isSelected = platform === id && active
+        <div style={{ display: 'flex', gap: 6, marginBottom: 22 }}>
+          {PLATFORMS.map(({ id, label, icon: Icon }) => {
+            const pm = PLATFORM_META[id]
+            const isSelected = platform === id
             return (
               <button
                 key={id}
-                onClick={() => active && setPlatform(id)}
-                disabled={!active}
+                onClick={() => setPlatform(id)}
                 style={{
-                  display: 'flex', alignItems: 'center', gap: 7,
-                  padding: '8px 18px', borderRadius: 999, fontSize: 13, fontWeight: isSelected ? 600 : 400,
-                  transition: 'all .15s', cursor: active ? 'pointer' : 'default',
-                  border: isSelected ? '1.5px solid var(--accent)' : '1.5px solid var(--border-default)',
-                  background: isSelected ? 'var(--accent-dim)' : 'transparent',
-                  color: isSelected ? 'var(--accent)' : active ? 'var(--text-secondary)' : 'var(--text-tertiary)',
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  padding: '9px 20px', borderRadius: 999, fontSize: 13,
+                  fontWeight: isSelected ? 600 : 400,
+                  cursor: 'pointer', transition: 'all .15s',
+                  border: isSelected
+                    ? `1.5px solid ${pm.brandColor}55`
+                    : '1.5px solid var(--border-subtle)',
+                  background: isSelected ? `${pm.brandColor}12` : 'transparent',
+                  color: isSelected ? pm.brandColor : 'var(--text-secondary)',
                 }}
               >
-                <Icon size={13} />
+                <Icon size={14} style={{ flexShrink: 0 }} />
                 {label}
-                {!active && (
-                  <span style={{ fontSize: 9, color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center', gap: 2, fontWeight: 400 }}>
-                    <Lock size={8} /> soon
-                  </span>
-                )}
               </button>
             )
           })}
         </div>
 
-        {/* ── Profile row ────────────────────────────────────────────────── */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20, flexWrap: 'wrap' }}>
+        {/* ── Config strip ───────────────────────────────────────────────── */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 18, flexWrap: 'wrap' }}>
           <select
             value={activeProfile.id}
             onChange={e => {
@@ -560,245 +593,187 @@ export default function Forge({ onSendToStudio, onBatchToStudio, generatedImages
           )}
 
           <span style={{ fontSize: 11, color: 'var(--text-tertiary)', marginLeft: 'auto' }}>
-            {activeProfile.outputFields.filter(f => f.enabled).length} fields
+            {fieldCount} fields
           </span>
         </div>
 
-        {/* ── Mode segmented control ──────────────────────────────────────── */}
+        {/* ── Composition card ────────────────────────────────────────────── */}
         <div style={{
-          display: 'inline-flex', gap: 2, padding: 3,
-          borderRadius: 12, background: 'var(--surface-3)',
-          border: '1px solid var(--border-subtle)', marginBottom: 20,
+          background: 'var(--surface-2)',
+          border: `1.5px solid ${streamActive ? 'var(--accent-border)' : 'var(--border-default)'}`,
+          borderRadius: 20, padding: '22px 24px', marginBottom: 16,
+          boxShadow: '0 2px 16px rgba(0,0,0,0.07)',
+          transition: 'border-color .2s',
         }}>
-          {(['post', 'series'] as const).map(m => (
-            <button
-              key={m}
-              onClick={() => setMode(m)}
+
+          {/* Platform hint */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+            <span style={{ fontSize: 10, fontWeight: 600, color: meta.brandColor, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+              {platform === 'instagram' ? 'Instagram' : platform === 'twitter' ? 'Twitter/X' : 'LinkedIn'}
+            </span>
+            <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{meta.hint}</span>
+          </div>
+
+          {/* Topic textarea */}
+          <textarea
+            value={topic}
+            onChange={e => setTopic(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && e.metaKey && canGenerate && !streamActive) handleGenerate() }}
+            placeholder={meta.placeholder}
+            disabled={streamActive}
+            rows={3}
+            style={{
+              width: '100%', padding: '14px 16px', borderRadius: 12,
+              border: '1.5px solid var(--border-subtle)',
+              background: 'var(--surface-3)',
+              color: 'var(--text-primary)', fontSize: 14, resize: 'none',
+              outline: 'none', lineHeight: 1.65, boxSizing: 'border-box',
+              fontFamily: 'var(--font-ui)', transition: 'border-color .12s',
+              opacity: streamActive ? 0.6 : 1,
+            }}
+            onFocus={e => { e.currentTarget.style.borderColor = 'var(--accent)' }}
+            onBlur={e => { e.currentTarget.style.borderColor = 'var(--border-subtle)' }}
+          />
+
+          {/* Bottom action row */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
+
+            {/* Trending category */}
+            <select
+              value={trendCat}
+              onChange={e => setTrendCat(e.target.value)}
               style={{
-                padding: '6px 18px', borderRadius: 9, fontSize: 12, fontWeight: mode === m ? 600 : 400,
-                border: 'none', cursor: 'pointer', transition: 'all .12s',
-                background: mode === m ? 'var(--surface-1)' : 'transparent',
-                color: mode === m ? 'var(--text-primary)' : 'var(--text-tertiary)',
-                boxShadow: mode === m ? '0 1px 3px rgba(0,0,0,0.10)' : 'none',
+                padding: '6px 10px', borderRadius: 9, fontSize: 11,
+                border: '1px solid var(--border-subtle)', background: 'var(--surface-3)',
+                color: 'var(--text-secondary)', outline: 'none', maxWidth: 160,
               }}
             >
-              {m === 'post' ? 'Single Post' : 'Campaign Series'}
+              {categories.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+
+            <button
+              onClick={handleFetchTrending}
+              disabled={trendLoading}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 5,
+                padding: '6px 12px', borderRadius: 9, fontSize: 11,
+                cursor: trendLoading ? 'default' : 'pointer',
+                border: '1px solid var(--border-subtle)', background: 'transparent',
+                color: trendLoading ? 'var(--text-tertiary)' : 'var(--text-secondary)',
+                transition: 'all .12s',
+              }}
+            >
+              <RefreshCw size={10} style={trendLoading ? { animation: 'spin 1s linear infinite' } : {}} />
+              <TrendingUp size={10} style={{ color: 'var(--accent)' }} />
+              {trendLoading ? 'Fetching...' : 'Trending'}
             </button>
-          ))}
-        </div>
 
-        {/* ── Main input card ─────────────────────────────────────────────── */}
-        <div style={{
-          background: 'var(--surface-2)', border: '1px solid var(--border-default)',
-          borderRadius: 16, padding: '20px 22px', marginBottom: 20,
-          boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
-        }}>
+            <div style={{ flex: 1 }} />
 
-          {mode === 'post' ? (
-            /* ── Single post mode ── */
-            <div>
-              <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.07em', margin: '0 0 10px' }}>
-                Topic
-              </p>
-              <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
-                <input
-                  value={topic}
-                  onChange={e => setTopic(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && !streamActive && topic.trim() && handleSingleForge()}
-                  placeholder="What do you want to post about?"
-                  autoFocus
-                  style={{
-                    flex: 1, padding: '12px 16px', borderRadius: 12,
-                    border: '1.5px solid var(--border-default)',
-                    background: 'var(--surface-3)',
-                    color: 'var(--text-primary)', fontSize: 14, outline: 'none',
-                    transition: 'border-color .12s',
-                    fontFamily: 'var(--font-ui)',
-                  }}
-                  onFocus={e => { e.currentTarget.style.borderColor = 'var(--accent)' }}
-                  onBlur={e => { e.currentTarget.style.borderColor = 'var(--border-default)' }}
-                />
-                {streamActive
-                  ? (
-                    <button onClick={stopCampaign} style={{
-                      display: 'flex', alignItems: 'center', gap: 6,
-                      padding: '12px 20px', borderRadius: 999, fontSize: 13, fontWeight: 600,
-                      border: '1.5px solid rgba(239,68,68,0.4)', background: 'transparent',
-                      color: 'var(--status-red)', cursor: 'pointer', whiteSpace: 'nowrap',
-                    }}>
-                      <StopCircle size={14} /> Stop
-                    </button>
-                  )
-                  : (
-                    <button
-                      onClick={handleSingleForge}
-                      disabled={!topic.trim()}
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: 7,
-                        padding: '12px 24px', borderRadius: 999, fontSize: 13, fontWeight: 700,
-                        border: 'none', cursor: topic.trim() ? 'pointer' : 'not-allowed',
-                        background: topic.trim() ? 'var(--accent)' : 'var(--surface-4)',
-                        color: topic.trim() ? 'var(--accent-fg)' : 'var(--text-tertiary)',
-                        transition: 'all .15s', whiteSpace: 'nowrap',
-                        boxShadow: topic.trim() ? '0 1px 4px rgba(0,0,0,0.18)' : 'none',
-                      }}>
-                      <Zap size={14} /> Forge Post
-                    </button>
-                  )
+            {/* Posts count */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: 11, color: 'var(--text-tertiary)', whiteSpace: 'nowrap' }}>
+                {isSeries ? 'Series:' : 'Posts:'}
+              </span>
+              <input
+                type="number" min={1} max={20}
+                value={campaignCount}
+                disabled={streamActive}
+                onChange={e => setCampaignCount(e.target.value)}
+                onBlur={e => { const v = parseInt(e.target.value); setCampaignCount(String(isNaN(v) || v < 1 ? 1 : Math.min(v, 20))) }}
+                style={{
+                  width: 52, padding: '5px 8px', borderRadius: 8, textAlign: 'center',
+                  border: '1px solid var(--border-subtle)', background: 'var(--surface-3)',
+                  color: 'var(--text-primary)', fontSize: 12, outline: 'none',
+                }}
+              />
+            </div>
+
+            {/* Template — only when series */}
+            {isSeries && (
+              <select
+                value={selectedTmpl}
+                onChange={e => setSelectedTmpl(e.target.value)}
+                disabled={streamActive || templates.length === 0}
+                style={{
+                  padding: '6px 10px', borderRadius: 9, fontSize: 11,
+                  border: '1px solid var(--border-subtle)', background: 'var(--surface-3)',
+                  color: templates.length === 0 ? 'var(--text-tertiary)' : 'var(--text-secondary)',
+                  outline: 'none', maxWidth: 160,
+                }}
+              >
+                {templates.length === 0
+                  ? <option value="">No templates</option>
+                  : templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)
                 }
-              </div>
+              </select>
+            )}
 
-              {/* Trending row */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <select value={trendCat} onChange={e => setTrendCat(e.target.value)}
-                  style={{
-                    padding: '5px 10px', borderRadius: 8, fontSize: 11,
-                    border: '1px solid var(--border-subtle)', background: 'var(--surface-3)',
-                    color: 'var(--text-secondary)', outline: 'none',
-                  }}>
-                  {categories.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
-                <button onClick={handleFetchTrending} disabled={trendLoading}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 5,
-                    padding: '5px 12px', borderRadius: 8, fontSize: 11,
-                    cursor: trendLoading ? 'default' : 'pointer',
-                    border: '1px solid var(--border-subtle)', background: 'transparent',
-                    color: trendLoading ? 'var(--text-tertiary)' : 'var(--text-secondary)',
-                    transition: 'all .12s',
-                  }}>
-                  <RefreshCw size={10} style={trendLoading ? { animation: 'spin 1s linear infinite' } : {}} />
-                  <TrendingUp size={10} style={{ color: 'var(--accent)' }} />
-                  {trendLoading ? 'Fetching...' : 'Trending topics'}
-                </button>
-              </div>
-            </div>
-          ) : (
-            /* ── Campaign series mode ── */
-            <div>
-              <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.07em', margin: '0 0 16px' }}>
-                Campaign Settings
-              </p>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: 10, marginBottom: 16, alignItems: 'end' }}>
-                {/* Category */}
-                <div>
-                  <p style={{ fontSize: 10, color: 'var(--text-tertiary)', margin: '0 0 5px', fontWeight: 500 }}>Category</p>
-                  <select value={campaignCat} onChange={e => setCampaignCat(e.target.value)}
-                    disabled={streamActive}
-                    style={{
-                      width: '100%', padding: '9px 12px', borderRadius: 10,
-                      border: '1.5px solid var(--border-default)', background: 'var(--surface-3)',
-                      color: 'var(--text-primary)', fontSize: 12, outline: 'none',
-                    }}>
-                    {categories.map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </div>
-
-                {/* Count */}
-                <div>
-                  <p style={{ fontSize: 10, color: 'var(--text-tertiary)', margin: '0 0 5px', fontWeight: 500 }}>Posts</p>
-                  <input
-                    type="number" min={1} max={20}
-                    value={campaignCount}
-                    disabled={streamActive}
-                    onChange={e => setCampaignCount(e.target.value)}
-                    onBlur={e => { const v = parseInt(e.target.value); setCampaignCount(String(isNaN(v) || v < 1 ? 1 : Math.min(v, 20))) }}
-                    style={{
-                      width: 72, padding: '9px 10px', borderRadius: 10, textAlign: 'center',
-                      border: '1.5px solid var(--border-default)', background: 'var(--surface-3)',
-                      color: 'var(--text-primary)', fontSize: 12, outline: 'none',
-                    }}
-                  />
-                </div>
-
-                {/* Template */}
-                <div>
-                  <p style={{ fontSize: 10, color: 'var(--text-tertiary)', margin: '0 0 5px', fontWeight: 500 }}>Template</p>
-                  <select
-                    value={selectedTmpl}
-                    onChange={e => setSelectedTmpl(e.target.value)}
-                    disabled={streamActive || templates.length === 0}
-                    style={{
-                      padding: '9px 12px', borderRadius: 10,
-                      border: '1.5px solid var(--border-default)', background: 'var(--surface-3)',
-                      color: templates.length === 0 ? 'var(--text-tertiary)' : 'var(--text-primary)',
-                      fontSize: 12, maxWidth: 180, outline: 'none',
-                    }}>
-                    {templates.length === 0
-                      ? <option value="">No templates yet</option>
-                      : templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)
-                    }
-                  </select>
-                </div>
-              </div>
-
-              {/* Trending + Generate row */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <button onClick={handleFetchTrending} disabled={trendLoading}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 5,
-                    padding: '7px 14px', borderRadius: 8, fontSize: 11,
-                    cursor: trendLoading ? 'default' : 'pointer',
-                    border: '1px solid var(--border-subtle)', background: 'transparent',
-                    color: trendLoading ? 'var(--text-tertiary)' : 'var(--text-secondary)',
-                  }}>
-                  <RefreshCw size={10} style={trendLoading ? { animation: 'spin 1s linear infinite' } : {}} />
-                  <TrendingUp size={10} style={{ color: 'var(--accent)' }} />
-                  {trendLoading ? 'Fetching...' : 'Trending topics'}
-                </button>
-
-                <div style={{ marginLeft: 'auto' }}>
-                  {streamActive
-                    ? (
-                      <button onClick={stopCampaign} style={{
-                        display: 'flex', alignItems: 'center', gap: 6,
-                        padding: '10px 20px', borderRadius: 999, fontSize: 13, fontWeight: 600,
-                        border: '1.5px solid rgba(239,68,68,0.4)', background: 'transparent',
-                        color: 'var(--status-red)', cursor: 'pointer',
-                      }}>
-                        <StopCircle size={14} /> Stop
-                      </button>
-                    )
-                    : (
-                      <button onClick={runCampaign} style={{
-                        display: 'flex', alignItems: 'center', gap: 7,
-                        padding: '10px 24px', borderRadius: 999, fontSize: 13, fontWeight: 700,
-                        border: 'none', cursor: 'pointer',
-                        background: 'var(--accent)', color: 'var(--accent-fg)',
-                        transition: 'all .15s',
-                        boxShadow: '0 1px 4px rgba(0,0,0,0.18)',
-                      }}>
-                        <Layers size={14} /> Generate Series
-                      </button>
-                    )
-                  }
-                </div>
-              </div>
-
-              <p style={{ fontSize: 11, color: 'var(--text-tertiary)', margin: '10px 0 0' }}>
-                Generating {campaignCount} posts on trending {campaignCat} topics
-              </p>
-            </div>
-          )}
+            {/* Generate / Stop */}
+            {streamActive ? (
+              <button
+                onClick={stopCampaign}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  padding: '9px 20px', borderRadius: 999, fontSize: 13, fontWeight: 600,
+                  border: '1.5px solid rgba(239,68,68,0.35)', background: 'transparent',
+                  color: 'var(--status-red)', cursor: 'pointer', whiteSpace: 'nowrap',
+                }}
+              >
+                <StopCircle size={14} /> Stop
+              </button>
+            ) : (
+              <button
+                onClick={handleGenerate}
+                disabled={!canGenerate}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 7,
+                  padding: '9px 22px', borderRadius: 999, fontSize: 13, fontWeight: 700,
+                  border: 'none', cursor: canGenerate ? 'pointer' : 'not-allowed',
+                  background: canGenerate ? 'var(--accent)' : 'var(--surface-4)',
+                  color: canGenerate ? 'var(--accent-fg)' : 'var(--text-tertiary)',
+                  transition: 'all .15s', whiteSpace: 'nowrap',
+                  boxShadow: canGenerate ? '0 2px 8px rgba(201,106,66,0.30)' : 'none',
+                }}
+              >
+                {isSeries ? <Layers size={14} /> : <Zap size={14} />}
+                {isSeries ? 'Generate Series' : 'Create Post'}
+              </button>
+            )}
+          </div>
 
           {/* Trending topics list */}
           {showTrending && trending.length > 0 && (
-            <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <p style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.07em', margin: '0 0 8px' }}>Trending Now</p>
+            <div style={{
+              marginTop: 16, paddingTop: 16,
+              borderTop: '1px solid var(--border-subtle)',
+              display: 'flex', flexDirection: 'column', gap: 4,
+            }}>
+              <p style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.07em', margin: '0 0 8px' }}>
+                Trending Now
+              </p>
               {trending.map((t, i) => (
-                <div key={i}
-                  onClick={() => { setTopic(t.title); setShowTrending(false); setMode('post') }}
+                <div
+                  key={i}
+                  onClick={() => { setTopic(t.title); setShowTrending(false) }}
                   style={{
-                    padding: '9px 14px', borderRadius: 10,
+                    padding: '10px 14px', borderRadius: 10,
                     border: '1px solid var(--border-subtle)',
                     cursor: 'pointer', background: 'var(--surface-3)', transition: 'all .12s',
                   }}
-                  onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.background = 'var(--accent-dim)' }}
-                  onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border-subtle)'; e.currentTarget.style.background = 'var(--surface-3)' }}
+                  onMouseEnter={e => {
+                    e.currentTarget.style.borderColor = 'var(--accent-border)'
+                    e.currentTarget.style.background = 'var(--accent-dim)'
+                  }}
+                  onMouseLeave={e => {
+                    e.currentTarget.style.borderColor = 'var(--border-subtle)'
+                    e.currentTarget.style.background = 'var(--surface-3)'
+                  }}
                 >
                   <p style={{ fontSize: 13, color: 'var(--text-primary)', margin: 0, fontWeight: 500 }}>{t.title}</p>
-                  {t.snippet && <p style={{ fontSize: 11, color: 'var(--text-tertiary)', lineHeight: 1.5, margin: '3px 0 0' }}>{t.snippet}</p>}
+                  {t.snippet && (
+                    <p style={{ fontSize: 11, color: 'var(--text-tertiary)', lineHeight: 1.5, margin: '3px 0 0' }}>{t.snippet}</p>
+                  )}
                 </div>
               ))}
             </div>
@@ -808,6 +783,108 @@ export default function Forge({ onSendToStudio, onBatchToStudio, generatedImages
             <p style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 10, fontStyle: 'italic' }}>{trendError}</p>
           )}
         </div>
+
+        {/* ── Live generation stream (Claude-style) ──────────────────────── */}
+        {streamActive && (
+          <div style={{
+            background: 'var(--surface-2)',
+            border: '1px solid var(--accent-border)',
+            borderRadius: 16, padding: '18px 22px', marginBottom: 16,
+            boxShadow: '0 0 24px rgba(201,106,66,0.06)',
+          }}>
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+              <div style={{ display: 'flex', gap: 4 }}>
+                {[0, 1, 2].map(i => (
+                  <div key={i} style={{
+                    width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)',
+                    animation: 'pulse 1.2s ease-in-out infinite',
+                    animationDelay: `${i * 0.2}s`,
+                  }} />
+                ))}
+              </div>
+
+              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>
+                {streamingPost
+                  ? `Generating post ${streamingPost.index + 1} of ${streamPosts.length}`
+                  : `${completedCount} of ${streamPosts.length} complete`}
+              </span>
+
+              {streamingPost && streamingPost.sourceCount > 0 && (
+                <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
+                  · {streamingPost.sourceCount} sources researched
+                </span>
+              )}
+
+              <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text-tertiary)', fontVariantNumeric: 'tabular-nums' }}>
+                {elapsedMs > 0
+                  ? `${Math.floor(elapsedMs / 60000)}:${String(Math.floor((elapsedMs % 60000) / 1000)).padStart(2, '0')}`
+                  : '0:00'}
+              </span>
+            </div>
+
+            {/* Progress bar */}
+            <div style={{ height: 2, background: 'var(--border-subtle)', borderRadius: 1, overflow: 'hidden', marginBottom: 14 }}>
+              <div style={{
+                height: '100%', borderRadius: 1, background: 'var(--accent)',
+                width: `${(completedCount / Math.max(streamPosts.length, 1)) * 100}%`,
+                transition: 'width .4s ease',
+              }} />
+            </div>
+
+            {/* Streaming text */}
+            {streamingPost && streamingPost.streamText && (
+              <div style={{
+                fontFamily: '"SF Mono", "Fira Code", "Cascadia Code", monospace',
+                fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.75,
+                whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                maxHeight: 220, overflowY: 'auto',
+                padding: '14px 16px',
+                background: 'var(--surface-3)',
+                borderRadius: 10,
+                border: '1px solid var(--border-subtle)',
+              }}>
+                {streamingPost.streamText}
+                <span style={{
+                  display: 'inline-block', width: 2, height: 13,
+                  background: 'var(--accent)', marginLeft: 2,
+                  verticalAlign: 'text-bottom',
+                  animation: 'cursor-blink 0.7s step-end infinite',
+                }} />
+              </div>
+            )}
+
+            {/* Post thumbnails row while streaming */}
+            {streamPosts.length > 1 && (
+              <div style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
+                {streamPosts.map(p => {
+                  const dot =
+                    p.status === 'done'       ? 'var(--accent)' :
+                    p.status === 'streaming'  ? 'var(--accent)' :
+                    p.status === 'error'      ? 'var(--status-red)' :
+                    p.status === 'generating' ? 'var(--text-tertiary)' :
+                                                'var(--border-default)'
+                  return (
+                    <div key={p.index} style={{
+                      display: 'flex', alignItems: 'center', gap: 5,
+                      padding: '4px 10px', borderRadius: 999, fontSize: 11,
+                      background: 'var(--surface-3)',
+                      border: `1px solid ${p.status === 'streaming' ? 'var(--accent-border)' : 'var(--border-subtle)'}`,
+                      color: 'var(--text-secondary)',
+                    }}>
+                      <div style={{
+                        width: 5, height: 5, borderRadius: '50%', background: dot,
+                        flexShrink: 0,
+                        animation: p.status === 'generating' || p.status === 'streaming' ? 'pulse 1.2s infinite' : 'none',
+                      }} />
+                      Post {p.index + 1}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* ── Errors ─────────────────────────────────────────────────────── */}
         {campaignError && (
@@ -821,7 +898,7 @@ export default function Forge({ onSendToStudio, onBatchToStudio, generatedImages
         )}
 
         {/* ── Results ────────────────────────────────────────────────────── */}
-        {(streamPosts.length > 0 || streamActive) && (
+        {streamPosts.length > 0 && (
           <BatchStream
             campaign={campaignBrief}
             posts={streamPosts}
