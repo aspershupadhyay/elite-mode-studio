@@ -31,7 +31,6 @@ export interface SessionPage {
   label: string
   canvasJSON: string | null
   thumbnail: string | null
-  locked?: boolean
 }
 
 export interface SessionData {
