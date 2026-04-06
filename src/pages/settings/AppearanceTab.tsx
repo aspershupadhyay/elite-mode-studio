@@ -44,7 +44,7 @@ export default function AppearanceTab(_props: AppearanceTabProps): React.ReactEl
           {(['dark', 'light'] as Theme[]).map(t => {
             const isDark = t === 'dark'
             const active = theme === t
-            const bg = isDark ? '#0C0C0C' : '#F2F2F7'
+            const bg = isDark ? '#0C0C0C' : '#F0EDE8'
             const surface = isDark ? '#181818' : '#FFFFFF'
             const text = isDark ? '#F0F0F0' : '#1C1C1E'
             const subtext = isDark ? '#9A9A9A' : '#48484A'

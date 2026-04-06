@@ -116,14 +116,14 @@ body {
 ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.18); }
 
 /* ═══════════════════════════════════════════════════════════════════
-   LIGHT THEME — premium Apple-style
+   LIGHT THEME — warm cream, easy on eyes
    ═══════════════════════════════════════════════════════════════════ */
 [data-theme="light"] {
-  --surface-0:  #F2F2F7;   /* iOS system gray — window bg */
-  --surface-1:  #FFFFFF;   /* primary panels, sidebar */
+  --surface-0:  #F0EDE8;   /* warm cream — window bg, soothing */
+  --surface-1:  #FAF8F5;   /* panels, sidebar */
   --surface-2:  #FFFFFF;   /* cards */
-  --surface-3:  #F2F2F7;   /* hover, secondary inputs */
-  --surface-4:  #E5E5EA;   /* pressed states */
+  --surface-3:  #F0EDE8;   /* hover, secondary inputs */
+  --surface-4:  #E8E3DC;   /* pressed states */
 
   --bg:    var(--surface-1);
   --bg2:   var(--surface-2);

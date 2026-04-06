@@ -244,8 +244,8 @@ export function Btn({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    padding: small ? '5px 12px' : '8px 16px',
-    borderRadius: 8,
+    padding: small ? '5px 14px' : '8px 20px',
+    borderRadius: 999,
     fontSize: small ? 11 : 13,
     fontWeight: 500,
     fontFamily: 'var(--font-ui)',
@@ -255,18 +255,20 @@ export function Btn({
     border: 'none',
     flexShrink: 0,
     opacity: isDisabled ? 0.5 : 1,
+    whiteSpace: 'nowrap' as const,
   }
 
   const variants: Record<BtnVariant, React.CSSProperties> = {
     primary: {
       background: DS.accent,
-      color: 'var(--accent-fg)',  /* always dark on bright accent fill */
+      color: 'var(--accent-fg)',
       fontWeight: 600,
+      boxShadow: '0 1px 3px rgba(0,0,0,0.18)',
     },
     secondary: {
       background: 'transparent',
-      border: `1px solid ${DS.border}`,
-      color: DS.text2,
+      border: `1.5px solid ${DS.border2}`,
+      color: DS.text,
     },
     ghost: {
       background: 'transparent',
@@ -274,14 +276,14 @@ export function Btn({
     },
     danger: {
       background: 'transparent',
-      border: `1px solid rgba(239,68,68,0.3)`,
+      border: `1.5px solid rgba(239,68,68,0.35)`,
       color: DS.red,
     },
   }
 
   const hoverMap: Record<BtnVariant, React.CSSProperties> = {
-    primary:   { filter: 'brightness(1.1)' },
-    secondary: { background: DS.bg4, color: DS.text },
+    primary:   { filter: 'brightness(1.08)', boxShadow: '0 2px 8px rgba(0,0,0,0.22)' },
+    secondary: { background: DS.bg4, borderColor: DS.text3 },
     ghost:     { background: DS.bg4, color: DS.text },
     danger:    { background: 'rgba(239,68,68,0.08)' },
   }
@@ -352,13 +354,13 @@ export function Input({ value, onChange, placeholder, onKeyDown, style = {}, typ
         width: '100%',
         padding: '10px 14px',
         background: DS.bg3,
-        border: `1px solid ${focused ? 'var(--accent)' : DS.border}`,
-        borderRadius: 8,
+        border: `1.5px solid ${focused ? 'var(--accent)' : DS.border}`,
+        borderRadius: 12,
         color: DS.text,
         fontSize: 13,
         outline: 'none',
         fontFamily: 'var(--font-ui)',
-        transition: 'border-color var(--ease-fast)',
+        transition: 'border-color var(--ease-fast), box-shadow var(--ease-fast)',
         boxShadow: focused ? '0 0 0 3px var(--accent-dim)' : 'none',
         ...style,
       }}
@@ -390,13 +392,13 @@ export function Badge({ children, color = 'accent', style = {} }: BadgeProps): R
     <span style={{
       display: 'inline-flex',
       alignItems: 'center',
-      padding: '2px 7px',
-      borderRadius: 20,
+      padding: '2px 9px',
+      borderRadius: 999,
       fontSize: 10,
       fontWeight: 600,
-      letterSpacing: '0.04em',
+      letterSpacing: '0.03em',
       background: c.bg,
-      border: `1px solid ${c.border}`,
+      border: `1.5px solid ${c.border}`,
       color: c.text,
       ...style,
     }}>
@@ -484,10 +486,10 @@ export function FieldInput({ label, value, onChange, type = 'text', placeholder 
           onBlur={() => setFocused(false)}
           style={{
             flex: 1,
-            padding: '9px 12px',
+            padding: '9px 14px',
             background: DS.bg,
-            border: `1px solid ${focused ? 'var(--accent)' : DS.border2}`,
-            borderRadius: 8,
+            border: `1.5px solid ${focused ? 'var(--accent)' : DS.border}`,
+            borderRadius: 12,
             color: DS.text,
             fontSize: 13,
             outline: 'none',
@@ -503,8 +505,8 @@ export function FieldInput({ label, value, onChange, type = 'text', placeholder 
             style={{
               padding: '0 12px',
               background: DS.bg,
-              border: `1px solid ${DS.border2}`,
-              borderRadius: 8,
+              border: `1.5px solid ${DS.border}`,
+              borderRadius: 12,
               color: DS.text2,
               cursor: 'pointer',
               flexShrink: 0,
@@ -540,15 +542,16 @@ export function SelectChip({ options, value, onChange }: {
             key={o.value}
             onClick={() => onChange(o.value)}
             style={{
-              padding: '5px 12px',
-              borderRadius: 20,
+              padding: '5px 14px',
+              borderRadius: 999,
               fontSize: 11,
               fontWeight: isActive ? 600 : 400,
-              border: `1px solid ${isActive ? DS.accentBd : DS.border}`,
-              background: isActive ? DS.accentDim : 'transparent',
-              color: isActive ? DS.accent : DS.text2,
+              border: `1.5px solid ${isActive ? DS.accent : DS.border}`,
+              background: isActive ? DS.accent : 'transparent',
+              color: isActive ? 'var(--accent-fg)' : DS.text2,
               cursor: 'pointer',
               transition: 'all var(--ease-fast)',
+              letterSpacing: '-0.01em',
             }}
           >
             {o.label}
@@ -750,8 +753,8 @@ export function Textarea({ value, onChange, placeholder, rows = 4, style = {} }:
         width: '100%',
         padding: '10px 14px',
         background: DS.bg3,
-        border: `1px solid ${focused ? 'var(--accent)' : DS.border}`,
-        borderRadius: 8,
+        border: `1.5px solid ${focused ? 'var(--accent)' : DS.border}`,
+        borderRadius: 12,
         color: DS.text,
         fontSize: 13,
         outline: 'none',
