@@ -125,6 +125,8 @@ export interface CanvasHandle {
   setZoom: (zoom: number) => void
   getZoom: () => number
   zoomToFit: () => void
+  /** Fill the container exactly — no padding, no cap. Used by card scroll view. */
+  zoomToFill: () => void
   /** Restore zoom (percentage) and pan in one atomic update — used by session restore. */
   restoreViewport: (zoomPct: number, pan: { x: number; y: number }) => void
 

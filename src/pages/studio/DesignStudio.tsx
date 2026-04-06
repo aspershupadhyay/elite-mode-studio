@@ -236,7 +236,8 @@ const [layersCollapsed, setLayersCollapsed] = useState<boolean>(() => {
       setTimeout(() => {
         canvasHandleRef.current?.importJSON(activePg.canvasJSON!)
         setTimeout(() => {
-          canvasHandleRef.current?.restoreViewport(session.zoom, session.pan)
+          // In card scroll view, always fill the card instead of restoring old zoom/pan
+          canvasHandleRef.current?.zoomToFill?.()
           // Restore fully settled — auto-save is now safe to run
           autoSaveReadyRef.current = true
         }, 120)
@@ -252,7 +253,7 @@ const [layersCollapsed, setLayersCollapsed] = useState<boolean>(() => {
     if (isActive && !prevActiveRef.current) {
       // Small delay ensures the container has non-zero dimensions after display:block
       setTimeout(() => {
-        canvasHandleRef.current?.zoomToFit()
+        canvasHandleRef.current?.zoomToFill?.()
         canvasHandleRef.current?.getCanvas()?.renderAll()
       }, 60)
     }
@@ -411,8 +412,8 @@ const [layersCollapsed, setLayersCollapsed] = useState<boolean>(() => {
 
     switchingRef.current = false
     setInjectMsg({ msg: `Page ${newIdx + 1} of ${pagesRef.current.length}` })
-    // Refit canvas to the new card slot dimensions after JSON has settled
-    setTimeout(() => { canvasHandleRef.current?.zoomToFit() }, 180)
+    // Fill canvas to the new card slot dimensions after JSON has settled
+    setTimeout(() => { canvasHandleRef.current?.zoomToFill?.() }, 180)
   }, [saveCurrentPage, applyContent])
 
   // ── Add blank page ────────────────────────────────────────────────────────
@@ -999,7 +1000,7 @@ const [layersCollapsed, setLayersCollapsed] = useState<boolean>(() => {
   const handleCanvasZoom = useCallback((z: number): void => { setZoomState(z) }, [])
 
   const handleZoomFit = useCallback((): void => {
-    canvasHandleRef.current?.zoomToFit()
+    canvasHandleRef.current?.zoomToFill?.()
     setTimeout(() => {
       const z = canvasHandleRef.current?.getZoom()
       if (z) setZoomState(z)
@@ -1060,7 +1061,7 @@ const [layersCollapsed, setLayersCollapsed] = useState<boolean>(() => {
           onReorder={reorderPages}
           onAddFromTemplate={addPageFromTemplate}
           onLock={handleLockPage}
-          onFitCanvas={() => canvasHandleRef.current?.zoomToFit()}
+          onFitCanvas={() => canvasHandleRef.current?.zoomToFill?.()}
           activeSlotRef={studioRef}
         >
           <DesignCanvas

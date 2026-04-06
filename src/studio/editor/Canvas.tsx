@@ -682,6 +682,22 @@ const DesignCanvas = forwardRef<CanvasHandle, CanvasProps>((
     getZoom: (): number => Math.round(zoom * 100),
     zoomToFit: (): void => calculateZoom(),
 
+    zoomToFill: (): void => {
+      const container = containerRef.current
+      if (!container) return
+      const cw = container.clientWidth
+      const ch = container.clientHeight
+      if (cw <= 0 || ch <= 0) return
+      // Fill the container exactly — no padding, no 0.6 cap
+      const newZoom = Math.min(cw / width, ch / height)
+      zoomRef.current = newZoom
+      setZoomState(newZoom)
+      const zeroPan = { x: 0, y: 0 }
+      panRef.current = zeroPan; setPan(zeroPan)
+      onPanChangeRef.current?.(zeroPan)
+      onZoomChangeRef.current?.(Math.round(newZoom * 100))
+    },
+
     resetToDefault: (): void => {
       const c = fabricRef.current; if (!c) return
       c.clear(); c.set('backgroundColor', BG)
