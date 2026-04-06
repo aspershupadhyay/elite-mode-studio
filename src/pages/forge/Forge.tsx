@@ -478,32 +478,38 @@ export default function Forge({ onSendToStudio, onBatchToStudio, generatedImages
   const completedCount = streamPosts.filter(p => p.status === 'done').length
   const errorCount     = streamPosts.filter(p => p.status === 'error').length
 
+  // ── Mode: 'post' or 'series' ─────────────────────────────────────────────
+  const [mode, setMode] = useState<'post' | 'series'>('post')
+
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <PageShell title="Forge" subtitle="AI Content Generator">
-      <div style={{ maxWidth: 860 }}>
+      <div style={{ maxWidth: 720 }}>
 
-        {/* ── 1. Platform selector ─────────────────────────────────────── */}
-        <div style={{ display: 'flex', gap: 8, marginBottom: 22 }}>
+        {/* ── Platform tabs ──────────────────────────────────────────────── */}
+        <div style={{ display: 'flex', gap: 6, marginBottom: 28 }}>
           {PLATFORMS.map(({ id, label, icon: Icon, active }) => {
             const isSelected = platform === id && active
             return (
-              <button key={id} onClick={() => active && setPlatform(id)} disabled={!active}
+              <button
+                key={id}
+                onClick={() => active && setPlatform(id)}
+                disabled={!active}
                 style={{
-                  display: 'flex', alignItems: 'center', gap: 8,
-                  padding: '9px 18px', borderRadius: 9, fontSize: 13, fontWeight: 500,
-                  transition: 'all .15s', cursor: active ? 'pointer' : 'not-allowed',
-                  border: isSelected ? '1px solid var(--accent)' : '1px solid var(--border)',
-                  background: isSelected ? 'var(--green-dim)' : 'transparent',
-                  color: isSelected ? 'var(--accent)' : active ? 'var(--text2)' : 'var(--text3)',
-                  boxShadow: isSelected ? '0 0 0 1px var(--green-border)' : 'none',
-                }}>
-                <Icon size={14} />
+                  display: 'flex', alignItems: 'center', gap: 7,
+                  padding: '8px 18px', borderRadius: 999, fontSize: 13, fontWeight: isSelected ? 600 : 400,
+                  transition: 'all .15s', cursor: active ? 'pointer' : 'default',
+                  border: isSelected ? '1.5px solid var(--accent)' : '1.5px solid var(--border-default)',
+                  background: isSelected ? 'var(--accent-dim)' : 'transparent',
+                  color: isSelected ? 'var(--accent)' : active ? 'var(--text-secondary)' : 'var(--text-tertiary)',
+                }}
+              >
+                <Icon size={13} />
                 {label}
                 {!active && (
-                  <span style={{ fontSize: 10, color: 'var(--text3)', display: 'flex', alignItems: 'center', gap: 2 }}>
-                    <Lock size={9} />soon
+                  <span style={{ fontSize: 9, color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center', gap: 2, fontWeight: 400 }}>
+                    <Lock size={8} /> soon
                   </span>
                 )}
               </button>
@@ -511,9 +517,8 @@ export default function Forge({ onSendToStudio, onBatchToStudio, generatedImages
           })}
         </div>
 
-        {/* ── 2. Profile switcher strip ─────────────────────────────────── */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 18, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 11, color: 'var(--text3)', flexShrink: 0 }}>Profile:</span>
+        {/* ── Profile row ────────────────────────────────────────────────── */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20, flexWrap: 'wrap' }}>
           <select
             value={activeProfile.id}
             onChange={e => {
@@ -522,180 +527,300 @@ export default function Forge({ onSendToStudio, onBatchToStudio, generatedImages
               setAllProfiles(getProfiles())
             }}
             style={{
-              fontSize: 12, fontWeight: 600, padding: '4px 10px', borderRadius: 8,
-              background: 'var(--accent-dim)', border: '1px solid var(--accent-border)',
-              color: 'var(--accent)', cursor: 'pointer',
+              fontSize: 12, fontWeight: 600, padding: '5px 12px', borderRadius: 999,
+              background: 'var(--accent-dim)', border: '1.5px solid var(--accent-border)',
+              color: 'var(--accent)', cursor: 'pointer', outline: 'none',
             }}
           >
             {allProfiles.map(p => (
               <option key={p.id} value={p.id}>{p.name}</option>
             ))}
           </select>
+
           {activeProfile.tone && (
-            <div style={{ padding: '4px 10px', borderRadius: 20, fontSize: 11,
-              background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text2)',
-              textTransform: 'capitalize' }}>{activeProfile.tone}</div>
+            <span style={{
+              padding: '4px 12px', borderRadius: 999, fontSize: 11, fontWeight: 500,
+              background: 'var(--surface-3)', border: '1px solid var(--border-subtle)',
+              color: 'var(--text-secondary)', textTransform: 'capitalize',
+            }}>
+              {activeProfile.tone}
+            </span>
           )}
+
           {activeProfile.searchEnabled && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4,
-              padding: '4px 10px', borderRadius: 20, fontSize: 11,
-              background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text3)' }}>
+            <span style={{
+              display: 'flex', alignItems: 'center', gap: 4,
+              padding: '4px 12px', borderRadius: 999, fontSize: 11,
+              background: 'var(--surface-3)', border: '1px solid var(--border-subtle)',
+              color: 'var(--text-tertiary)',
+            }}>
               <Calendar size={10} />
               {FRESH_LABELS[activeProfile.searchFreshness ?? '2days'] || activeProfile.searchFreshness}
-            </div>
+            </span>
           )}
-          {!activeProfile.searchEnabled && (
-            <div style={{ padding: '4px 10px', borderRadius: 20, fontSize: 11,
-              background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text3)' }}>
-              no web search
-            </div>
-          )}
-          <span style={{ fontSize: 10, color: 'var(--text3)', marginLeft: 2 }}>
-            · {activeProfile.outputFields.filter(f => f.enabled).length} output fields · edit in Settings → AI Profiles
+
+          <span style={{ fontSize: 11, color: 'var(--text-tertiary)', marginLeft: 'auto' }}>
+            {activeProfile.outputFields.filter(f => f.enabled).length} fields
           </span>
         </div>
 
-        {/* ── 3. Unified input card ─────────────────────────────────────── */}
+        {/* ── Mode segmented control ──────────────────────────────────────── */}
         <div style={{
-          background: 'var(--bg2)', border: '1px solid var(--border)',
-          borderRadius: 14, padding: '18px 20px', marginBottom: 20,
+          display: 'inline-flex', gap: 2, padding: 3,
+          borderRadius: 12, background: 'var(--surface-3)',
+          border: '1px solid var(--border-subtle)', marginBottom: 20,
+        }}>
+          {(['post', 'series'] as const).map(m => (
+            <button
+              key={m}
+              onClick={() => setMode(m)}
+              style={{
+                padding: '6px 18px', borderRadius: 9, fontSize: 12, fontWeight: mode === m ? 600 : 400,
+                border: 'none', cursor: 'pointer', transition: 'all .12s',
+                background: mode === m ? 'var(--surface-1)' : 'transparent',
+                color: mode === m ? 'var(--text-primary)' : 'var(--text-tertiary)',
+                boxShadow: mode === m ? '0 1px 3px rgba(0,0,0,0.10)' : 'none',
+              }}
+            >
+              {m === 'post' ? 'Single Post' : 'Campaign Series'}
+            </button>
+          ))}
+        </div>
+
+        {/* ── Main input card ─────────────────────────────────────────────── */}
+        <div style={{
+          background: 'var(--surface-2)', border: '1px solid var(--border-default)',
+          borderRadius: 16, padding: '20px 22px', marginBottom: 20,
+          boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
         }}>
 
-          {/* Topic input + Forge button */}
-          <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
-            <input
-              value={topic}
-              onChange={e => setTopic(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && !streamActive && (topic.trim() ? handleSingleForge() : runCampaign())}
-              placeholder="Topic for a single post — or leave empty for a campaign series below"
-              style={{
-                flex: 1, padding: '10px 14px', borderRadius: 9,
-                border: '1px solid var(--border)', background: 'var(--bg3)',
-                color: 'var(--text)', fontSize: 13, outline: 'none',
-              }}
-            />
-            {streamActive
-              ? (
-                <button onClick={stopCampaign} style={{
-                  display: 'flex', alignItems: 'center', gap: 6,
-                  padding: '10px 18px', borderRadius: 9, fontSize: 13, fontWeight: 600,
-                  border: '1px solid rgba(255,77,77,0.4)', background: 'transparent',
-                  color: 'var(--red)', cursor: 'pointer', whiteSpace: 'nowrap',
-                }}>
-                  <StopCircle size={14} />Stop
-                </button>
-              )
-              : (
-                <button
-                  onClick={() => topic.trim() ? handleSingleForge() : runCampaign()}
+          {mode === 'post' ? (
+            /* ── Single post mode ── */
+            <div>
+              <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.07em', margin: '0 0 10px' }}>
+                Topic
+              </p>
+              <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
+                <input
+                  value={topic}
+                  onChange={e => setTopic(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && !streamActive && topic.trim() && handleSingleForge()}
+                  placeholder="What do you want to post about?"
+                  autoFocus
                   style={{
-                    display: 'flex', alignItems: 'center', gap: 6,
-                    padding: '10px 22px', borderRadius: 9, fontSize: 13, fontWeight: 700,
-                    border: 'none', cursor: 'pointer',
-                    background: 'var(--accent)',
-                    color: 'var(--accent-fg, #000)',
-                    transition: 'all .15s', whiteSpace: 'nowrap',
-                  }}>
-                  {topic.trim() ? <><Zap size={14} />Forge</> : <><Layers size={14} />Generate Series</>}
-                </button>
-              )
-            }
-          </div>
-
-          {/* Second row: category + count + template + trending */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-
-            {/* Category */}
-            <select value={campaignCat} onChange={e => setCampaignCat(e.target.value)}
-              disabled={streamActive}
-              style={{ padding: '6px 10px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text)', fontSize: 12, colorScheme: 'dark' }}>
-              {categories.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
-
-            {/* Count */}
-            <input
-              type="number" min={1}
-              value={campaignCount}
-              disabled={streamActive}
-              onChange={e => setCampaignCount(e.target.value)}
-              onBlur={e => { const v = parseInt(e.target.value); setCampaignCount(String(isNaN(v) || v < 1 ? 1 : v)) }}
-              onKeyDown={e => e.key === 'Enter' && !streamActive && runCampaign()}
-              style={{ width: 64, padding: '6px 10px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text)', fontSize: 12, colorScheme: 'dark', textAlign: 'center' }}
-            />
-
-            {/* Template — always shown, empty state when no templates */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <LayoutTemplate size={11} style={{ color: 'var(--text3)', flexShrink: 0 }} />
-              <select
-                value={selectedTmpl}
-                onChange={e => setSelectedTmpl(e.target.value)}
-                disabled={streamActive || templates.length === 0}
-                style={{
-                  padding: '6px 10px', borderRadius: 7, border: '1px solid var(--border)',
-                  background: 'var(--bg3)', color: templates.length === 0 ? 'var(--text3)' : 'var(--text)',
-                  fontSize: 12, maxWidth: 180, colorScheme: 'dark',
-                }}>
-                {templates.length === 0
-                  ? <option value="">No templates — create one in Design Studio</option>
-                  : templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)
+                    flex: 1, padding: '12px 16px', borderRadius: 12,
+                    border: '1.5px solid var(--border-default)',
+                    background: 'var(--surface-3)',
+                    color: 'var(--text-primary)', fontSize: 14, outline: 'none',
+                    transition: 'border-color .12s',
+                    fontFamily: 'var(--font-ui)',
+                  }}
+                  onFocus={e => { e.currentTarget.style.borderColor = 'var(--accent)' }}
+                  onBlur={e => { e.currentTarget.style.borderColor = 'var(--border-default)' }}
+                />
+                {streamActive
+                  ? (
+                    <button onClick={stopCampaign} style={{
+                      display: 'flex', alignItems: 'center', gap: 6,
+                      padding: '12px 20px', borderRadius: 999, fontSize: 13, fontWeight: 600,
+                      border: '1.5px solid rgba(239,68,68,0.4)', background: 'transparent',
+                      color: 'var(--status-red)', cursor: 'pointer', whiteSpace: 'nowrap',
+                    }}>
+                      <StopCircle size={14} /> Stop
+                    </button>
+                  )
+                  : (
+                    <button
+                      onClick={handleSingleForge}
+                      disabled={!topic.trim()}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 7,
+                        padding: '12px 24px', borderRadius: 999, fontSize: 13, fontWeight: 700,
+                        border: 'none', cursor: topic.trim() ? 'pointer' : 'not-allowed',
+                        background: topic.trim() ? 'var(--accent)' : 'var(--surface-4)',
+                        color: topic.trim() ? 'var(--accent-fg)' : 'var(--text-tertiary)',
+                        transition: 'all .15s', whiteSpace: 'nowrap',
+                        boxShadow: topic.trim() ? '0 1px 4px rgba(0,0,0,0.18)' : 'none',
+                      }}>
+                      <Zap size={14} /> Forge Post
+                    </button>
+                  )
                 }
-              </select>
+              </div>
+
+              {/* Trending row */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <select value={trendCat} onChange={e => setTrendCat(e.target.value)}
+                  style={{
+                    padding: '5px 10px', borderRadius: 8, fontSize: 11,
+                    border: '1px solid var(--border-subtle)', background: 'var(--surface-3)',
+                    color: 'var(--text-secondary)', outline: 'none',
+                  }}>
+                  {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+                <button onClick={handleFetchTrending} disabled={trendLoading}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 5,
+                    padding: '5px 12px', borderRadius: 8, fontSize: 11,
+                    cursor: trendLoading ? 'default' : 'pointer',
+                    border: '1px solid var(--border-subtle)', background: 'transparent',
+                    color: trendLoading ? 'var(--text-tertiary)' : 'var(--text-secondary)',
+                    transition: 'all .12s',
+                  }}>
+                  <RefreshCw size={10} style={trendLoading ? { animation: 'spin 1s linear infinite' } : {}} />
+                  <TrendingUp size={10} style={{ color: 'var(--accent)' }} />
+                  {trendLoading ? 'Fetching...' : 'Trending topics'}
+                </button>
+              </div>
             </div>
+          ) : (
+            /* ── Campaign series mode ── */
+            <div>
+              <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.07em', margin: '0 0 16px' }}>
+                Campaign Settings
+              </p>
 
-            {/* Divider */}
-            <div style={{ width: 1, height: 20, background: 'var(--border)', flexShrink: 0 }} />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: 10, marginBottom: 16, alignItems: 'end' }}>
+                {/* Category */}
+                <div>
+                  <p style={{ fontSize: 10, color: 'var(--text-tertiary)', margin: '0 0 5px', fontWeight: 500 }}>Category</p>
+                  <select value={campaignCat} onChange={e => setCampaignCat(e.target.value)}
+                    disabled={streamActive}
+                    style={{
+                      width: '100%', padding: '9px 12px', borderRadius: 10,
+                      border: '1.5px solid var(--border-default)', background: 'var(--surface-3)',
+                      color: 'var(--text-primary)', fontSize: 12, outline: 'none',
+                    }}>
+                    {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
 
-            {/* Trending fetch */}
-            <TrendingUp size={12} style={{ color: 'var(--accent)', flexShrink: 0 }} />
-            <button onClick={handleFetchTrending} disabled={trendLoading}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 5,
-                padding: '5px 10px', borderRadius: 6, fontSize: 12,
-                cursor: trendLoading ? 'default' : 'pointer',
-                border: '1px solid var(--border)', background: 'transparent',
-                color: trendLoading ? 'var(--text3)' : 'var(--text2)',
-              }}>
-              <RefreshCw size={11} style={trendLoading ? { animation: 'spin 1s linear infinite' } : {}} />
-              {trendLoading ? 'Fetching…' : 'Fetch trending'}
-            </button>
+                {/* Count */}
+                <div>
+                  <p style={{ fontSize: 10, color: 'var(--text-tertiary)', margin: '0 0 5px', fontWeight: 500 }}>Posts</p>
+                  <input
+                    type="number" min={1} max={20}
+                    value={campaignCount}
+                    disabled={streamActive}
+                    onChange={e => setCampaignCount(e.target.value)}
+                    onBlur={e => { const v = parseInt(e.target.value); setCampaignCount(String(isNaN(v) || v < 1 ? 1 : Math.min(v, 20))) }}
+                    style={{
+                      width: 72, padding: '9px 10px', borderRadius: 10, textAlign: 'center',
+                      border: '1.5px solid var(--border-default)', background: 'var(--surface-3)',
+                      color: 'var(--text-primary)', fontSize: 12, outline: 'none',
+                    }}
+                  />
+                </div>
 
-            {/* Hint */}
-            <span style={{ fontSize: 11, color: 'var(--text3)', marginLeft: 'auto' }}>
-              {topic.trim()
-                ? `${campaignCount} post${parseInt(campaignCount) > 1 ? 's' : ''} on this topic`
-                : `Series · ${campaignCount} posts · ${campaignCat}`}
-            </span>
-          </div>
+                {/* Template */}
+                <div>
+                  <p style={{ fontSize: 10, color: 'var(--text-tertiary)', margin: '0 0 5px', fontWeight: 500 }}>Template</p>
+                  <select
+                    value={selectedTmpl}
+                    onChange={e => setSelectedTmpl(e.target.value)}
+                    disabled={streamActive || templates.length === 0}
+                    style={{
+                      padding: '9px 12px', borderRadius: 10,
+                      border: '1.5px solid var(--border-default)', background: 'var(--surface-3)',
+                      color: templates.length === 0 ? 'var(--text-tertiary)' : 'var(--text-primary)',
+                      fontSize: 12, maxWidth: 180, outline: 'none',
+                    }}>
+                    {templates.length === 0
+                      ? <option value="">No templates yet</option>
+                      : templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)
+                    }
+                  </select>
+                </div>
+              </div>
 
-          {/* Trending list */}
+              {/* Trending + Generate row */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <button onClick={handleFetchTrending} disabled={trendLoading}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 5,
+                    padding: '7px 14px', borderRadius: 8, fontSize: 11,
+                    cursor: trendLoading ? 'default' : 'pointer',
+                    border: '1px solid var(--border-subtle)', background: 'transparent',
+                    color: trendLoading ? 'var(--text-tertiary)' : 'var(--text-secondary)',
+                  }}>
+                  <RefreshCw size={10} style={trendLoading ? { animation: 'spin 1s linear infinite' } : {}} />
+                  <TrendingUp size={10} style={{ color: 'var(--accent)' }} />
+                  {trendLoading ? 'Fetching...' : 'Trending topics'}
+                </button>
+
+                <div style={{ marginLeft: 'auto' }}>
+                  {streamActive
+                    ? (
+                      <button onClick={stopCampaign} style={{
+                        display: 'flex', alignItems: 'center', gap: 6,
+                        padding: '10px 20px', borderRadius: 999, fontSize: 13, fontWeight: 600,
+                        border: '1.5px solid rgba(239,68,68,0.4)', background: 'transparent',
+                        color: 'var(--status-red)', cursor: 'pointer',
+                      }}>
+                        <StopCircle size={14} /> Stop
+                      </button>
+                    )
+                    : (
+                      <button onClick={runCampaign} style={{
+                        display: 'flex', alignItems: 'center', gap: 7,
+                        padding: '10px 24px', borderRadius: 999, fontSize: 13, fontWeight: 700,
+                        border: 'none', cursor: 'pointer',
+                        background: 'var(--accent)', color: 'var(--accent-fg)',
+                        transition: 'all .15s',
+                        boxShadow: '0 1px 4px rgba(0,0,0,0.18)',
+                      }}>
+                        <Layers size={14} /> Generate Series
+                      </button>
+                    )
+                  }
+                </div>
+              </div>
+
+              <p style={{ fontSize: 11, color: 'var(--text-tertiary)', margin: '10px 0 0' }}>
+                Generating {campaignCount} posts on trending {campaignCat} topics
+              </p>
+            </div>
+          )}
+
+          {/* Trending topics list */}
           {showTrending && trending.length > 0 && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+            <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <p style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.07em', margin: '0 0 8px' }}>Trending Now</p>
               {trending.map((t, i) => (
                 <div key={i}
-                  onClick={() => { setTopic(t.title); setShowTrending(false) }}
-                  style={{ padding: '8px 12px', borderRadius: 7, border: '1px solid var(--border)', cursor: 'pointer', background: 'var(--bg3)', transition: 'border .1s' }}
-                  onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
-                  onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border)')}>
-                  <p style={{ fontSize: 13, color: 'var(--text)', margin: 0 }}>{t.title}</p>
-                  {t.snippet && <p style={{ fontSize: 11, color: 'var(--text3)', lineHeight: 1.5, margin: '3px 0 0' }}>{t.snippet}</p>}
+                  onClick={() => { setTopic(t.title); setShowTrending(false); setMode('post') }}
+                  style={{
+                    padding: '9px 14px', borderRadius: 10,
+                    border: '1px solid var(--border-subtle)',
+                    cursor: 'pointer', background: 'var(--surface-3)', transition: 'all .12s',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.background = 'var(--accent-dim)' }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border-subtle)'; e.currentTarget.style.background = 'var(--surface-3)' }}
+                >
+                  <p style={{ fontSize: 13, color: 'var(--text-primary)', margin: 0, fontWeight: 500 }}>{t.title}</p>
+                  {t.snippet && <p style={{ fontSize: 11, color: 'var(--text-tertiary)', lineHeight: 1.5, margin: '3px 0 0' }}>{t.snippet}</p>}
                 </div>
               ))}
             </div>
           )}
-          {/* Inline trending error — not a campaign failure, just no results */}
+
           {trendError && !showTrending && (
-            <p style={{ fontSize: 11, color: 'var(--text3)', marginTop: 8, fontStyle: 'italic' }}>{trendError}</p>
+            <p style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 10, fontStyle: 'italic' }}>{trendError}</p>
           )}
         </div>
 
-        {/* ── 5. Errors ────────────────────────────────────────────────── */}
+        {/* ── Errors ─────────────────────────────────────────────────────── */}
         {campaignError && (
-          <div style={{ padding: '12px 14px', background: 'rgba(255,77,77,0.08)', border: '1px solid rgba(255,77,77,0.25)', borderRadius: 8, fontSize: 13, color: 'var(--red)', marginBottom: 16, lineHeight: 1.6 }}>
+          <div style={{
+            padding: '12px 16px', borderRadius: 10,
+            background: 'rgba(239,68,68,0.07)', border: '1px solid rgba(239,68,68,0.20)',
+            fontSize: 13, color: 'var(--status-red)', marginBottom: 16, lineHeight: 1.6,
+          }}>
             {campaignError}
           </div>
         )}
 
-        {/* ── 6. All results via BatchStream ───────────────────────────── */}
+        {/* ── Results ────────────────────────────────────────────────────── */}
         {(streamPosts.length > 0 || streamActive) && (
           <BatchStream
             campaign={campaignBrief}
@@ -722,7 +847,6 @@ export default function Forge({ onSendToStudio, onBatchToStudio, generatedImages
 
       </div>
 
-      {/* Edit modal */}
       {editingIndex !== null && streamPosts[editingIndex] && (
         <PostEditorModal
           post={{ ...streamPosts[editingIndex], content: streamPosts[editingIndex].content as import('../../components/PostEditorModal').EditableContent | undefined }}
