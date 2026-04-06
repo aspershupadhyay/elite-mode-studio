@@ -1048,50 +1048,47 @@ const [layersCollapsed, setLayersCollapsed] = useState<boolean>(() => {
           onExportAllPages={handleExportAllPages}
         />
 
-        <PageScrollView
-          pages={pages}
-          activePage={activePage}
-          canvasSize={canvasSize}
-          onSwitch={switchPage}
-          onAddBlank={addBlankPage}
-          onAddAfter={addPageAfter}
-          onDuplicate={duplicatePage}
-          onDelete={deletePage}
-          onRename={renamePage}
-          onReorder={reorderPages}
-          onAddFromTemplate={addPageFromTemplate}
-          onLock={handleLockPage}
-          onFitCanvas={() => canvasHandleRef.current?.zoomToFill?.()}
-          activeSlotRef={studioRef}
-        >
-          <DesignCanvas
-            ref={canvasHandleRef}
-            width={canvasSize.width}
-            height={canvasSize.height}
-            onSelectionChange={handleSelectionChange}
-            onHistoryChange={handleHistoryChange}
-            onContextMenu={handleContextMenu}
-            onGuidesChange={handleSnapGuidesChange}
-            onPanChange={handlePanChange}
-            onZoomChange={handleCanvasZoom}
-            rulerGuides={rulerGuides}
-          />
-          <GuideOverlay
-            guides={snapGuides as GuideData | null}
-            canvasHandle={canvasHandleRef}
-            zoom={zoom / 100}
-            canvasW={canvasSize.width}
-            canvasH={canvasSize.height}
-          />
-          <RulerGuides
-            canvasW={canvasSize.width}
-            canvasH={canvasSize.height}
-            zoom={zoom / 100}
-            pan={pan}
-            guides={rulerGuides}
-            onGuideChange={setRulerGuides}
-            studioRef={studioRef}
-          />
+        {/* Canvas zone: scroll view + overlaid global controls */}
+        <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+          <PageScrollView
+            pages={pages}
+            activePage={activePage}
+            canvasSize={canvasSize}
+            onSwitch={switchPage}
+            onAddBlank={addBlankPage}
+            onAddAfter={addPageAfter}
+            onDuplicate={duplicatePage}
+            onDelete={deletePage}
+            onRename={renamePage}
+            onReorder={reorderPages}
+            onAddFromTemplate={addPageFromTemplate}
+            onLock={handleLockPage}
+            onFitCanvas={() => canvasHandleRef.current?.zoomToFill?.()}
+            activeSlotRef={studioRef}
+          >
+            {/* Only the canvas + snap-guide overlay inside the card */}
+            <DesignCanvas
+              ref={canvasHandleRef}
+              width={canvasSize.width}
+              height={canvasSize.height}
+              onSelectionChange={handleSelectionChange}
+              onHistoryChange={handleHistoryChange}
+              onContextMenu={handleContextMenu}
+              onGuidesChange={handleSnapGuidesChange}
+              onPanChange={handlePanChange}
+              onZoomChange={handleCanvasZoom}
+              rulerGuides={rulerGuides}
+            />
+            <GuideOverlay
+              guides={snapGuides as GuideData | null}
+              canvasHandle={canvasHandleRef}
+              zoom={zoom / 100}
+              canvasW={canvasSize.width}
+              canvasH={canvasSize.height}
+            />
+          </PageScrollView>
+
+          {/* BottomToolbar floats over the scroll area — NOT inside the card */}
           <BottomToolbar
             activeTool={activeTool}
             onToolChange={setActiveTool}
@@ -1100,7 +1097,7 @@ const [layersCollapsed, setLayersCollapsed] = useState<boolean>(() => {
             onZoomChange={handleZoomChange}
             onZoomFit={handleZoomFit}
           />
-        </PageScrollView>
+        </div>
       </div>
 
       {/* Right — Properties */}

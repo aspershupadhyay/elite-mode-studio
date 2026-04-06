@@ -146,6 +146,7 @@ export default function PageScrollView({
   const activeCardRef = useRef<HTMLDivElement | null>(null)
 
   const [containerWidth,  setContainerWidth]  = useState(600)
+  const [containerHeight, setContainerHeight] = useState(700)
   const [renamingIdx,     setRenamingIdx]     = useState<number | null>(null)
   const [renameVal,       setRenameVal]       = useState('')
   const [addMenu,         setAddMenu]         = useState<{ x: number; y: number } | null>(null)
@@ -157,19 +158,34 @@ export default function PageScrollView({
     const el = scrollRef.current
     if (!el) return
     const ro = new ResizeObserver(entries => {
-      setContainerWidth(entries[0]?.contentRect.width ?? 600)
+      const rect = entries[0]?.contentRect
+      if (rect) {
+        setContainerWidth(rect.width)
+        setContainerHeight(rect.height)
+      }
     })
     ro.observe(el)
     return () => ro.disconnect()
   }, [])
 
-  const HPAD       = 80   // total horizontal padding (40px each side)
-  const cardWidth  = Math.max(200, containerWidth - HPAD)
-  const cardHeight = Math.round(cardWidth * (canvasSize.height / canvasSize.width))
+  // ── Active card dimensions (large, fills most of scroll area) ──────────────
+  const HPAD      = 64
+  const THUMB_H   = 180   // inactive page thumbnail height
 
-  // Refit canvas whenever card width changes
+  const rawActiveW = Math.max(200, containerWidth - HPAD)
+  const rawActiveH = Math.round(rawActiveW * canvasSize.height / canvasSize.width)
+  // Cap active card height to 72% of container so 2 cards can be seen
+  const maxActiveH = Math.max(300, Math.round(containerHeight * 0.72))
+  const activeCardH = Math.min(rawActiveH, maxActiveH)
+  const activeCardW = Math.round(activeCardH * canvasSize.width / canvasSize.height)
+
+  // ── Inactive thumbnail dimensions ────────────────────────────────────────────
+  const thumbH = THUMB_H
+  const thumbW = Math.round(thumbH * canvasSize.width / canvasSize.height)
+
+  // Refit canvas whenever active card changes
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { onFitCanvas() }, [cardWidth])
+  useEffect(() => { onFitCanvas() }, [activeCardW, activeCardH])
 
   // ── Auto-scroll active card into view ────────────────────────────────────────
   useEffect(() => {
@@ -330,15 +346,15 @@ export default function PageScrollView({
                 ref={isActive ? activeSlotRef : undefined}
                 onClick={!isActive && !page.locked ? () => onSwitch(i) : undefined}
                 style={{
-                  width: cardWidth,
-                  height: cardHeight,
+                  width: isActive ? activeCardW : thumbW,
+                  height: isActive ? activeCardH : thumbH,
                   position: 'relative',
                   overflow: 'hidden',
-                  borderRadius: 6,
+                  borderRadius: isActive ? 4 : 4,
                   cursor: isActive ? 'default' : page.locked ? 'not-allowed' : 'pointer',
                   boxShadow: isActive
-                    ? '0 0 0 2px var(--green), 0 8px 32px rgba(0,0,0,0.35)'
-                    : '0 2px 14px rgba(0,0,0,0.28)',
+                    ? '0 0 0 2px var(--green), 0 6px 24px rgba(0,0,0,0.4)'
+                    : '0 2px 8px rgba(0,0,0,0.22)',
                   transition: 'box-shadow .15s',
                   background: '#ffffff',
                   flexShrink: 0,
