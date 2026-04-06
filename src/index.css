@@ -57,18 +57,18 @@ body {
   --border-strong:  rgba(255,255,255,0.15);
   --border:   var(--border-default);   /* legacy alias */
 
-  /* ── Accent (user-swappable; AppearanceTab mutates --green) ──────── */
-  --green:        #c8ff00;
-  --green-rgb:    200, 255, 0;
-  --green-dim:    rgba(200,255,0,0.08);
-  --green-border: rgba(200,255,0,0.22);
-  /* Semantic aliases — new code uses these */
+  /* ── Accent — Claude copper-coral ───────────────────────────────── */
+  --green:        #C96A42;
+  --green-rgb:    201, 106, 66;
+  --green-dim:    rgba(201,106,66,0.10);
+  --green-border: rgba(201,106,66,0.28);
+  /* Semantic aliases */
   --accent:        var(--green);
   --accent-rgb:    var(--green-rgb);
   --accent-dim:    var(--green-dim);
   --accent-border: var(--green-border);
-  /* Foreground on solid accent fill — always dark for readability */
-  --accent-fg:     #000;
+  /* White text on copper-coral fill */
+  --accent-fg:     #fff;
 
   /* ── Text scale ─────────────────────────────────────────────────── */
   --text-primary:   #F0F0F0;
@@ -116,27 +116,27 @@ body {
 ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.18); }
 
 /* ═══════════════════════════════════════════════════════════════════
-   LIGHT THEME
+   LIGHT THEME — premium Apple-style
    ═══════════════════════════════════════════════════════════════════ */
 [data-theme="light"] {
-  --surface-0:  #F8F9FA;
-  --surface-1:  #FFFFFF;
-  --surface-2:  #F1F3F5;
-  --surface-3:  #E9ECEF;
-  --surface-4:  #DEE2E6;
+  --surface-0:  #F2F2F7;   /* iOS system gray — window bg */
+  --surface-1:  #FFFFFF;   /* primary panels, sidebar */
+  --surface-2:  #FFFFFF;   /* cards */
+  --surface-3:  #F2F2F7;   /* hover, secondary inputs */
+  --surface-4:  #E5E5EA;   /* pressed states */
 
   --bg:    var(--surface-1);
   --bg2:   var(--surface-2);
   --bg3:   var(--surface-3);
 
-  --border-subtle:  rgba(0,0,0,0.06);
-  --border-default: rgba(0,0,0,0.10);
-  --border-strong:  rgba(0,0,0,0.18);
+  --border-subtle:  rgba(0,0,0,0.07);
+  --border-default: rgba(0,0,0,0.11);
+  --border-strong:  rgba(0,0,0,0.20);
   --border:   var(--border-default);
 
-  --text-primary:   #111111;
-  --text-secondary: #555555;
-  --text-tertiary:  #999999;
+  --text-primary:   #1C1C1E;   /* near-black, Apple style */
+  --text-secondary: #48484A;
+  --text-tertiary:  #8E8E93;
   --text-inverse:   #FFFFFF;
   --text:   var(--text-primary);
   --text2:  var(--text-secondary);
@@ -145,8 +145,16 @@ body {
   color-scheme: light;
 }
 
-[data-theme="light"] ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.12); }
-[data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.22); }
+[data-theme="light"] body { background: var(--surface-0); }
+
+[data-theme="light"] ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.14); }
+[data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.24); }
+
+/* ── Card shadow override for light mode ────────────────────────── */
+[data-theme="light"] .ds-card {
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.05) !important;
+  border-color: rgba(0,0,0,0.08) !important;
+}
 
 /* ── Studio panel utilities ─────────────────────────────────────── */
 .studio-panel {

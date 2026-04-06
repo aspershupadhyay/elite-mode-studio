@@ -141,13 +141,13 @@ interface CardProps {
 export function Card({ children, style = {}, className }: CardProps): React.ReactElement {
   return (
     <div
-      className={className}
+      className={`ds-card${className ? ` ${className}` : ''}`}
       style={{
         background: DS.bg3,
         border: `1px solid ${DS.border}`,
         borderRadius: 12,
         padding: '18px 20px',
-        boxShadow: '0 1px 4px rgba(0,0,0,0.3)',
+        boxShadow: '0 1px 4px rgba(0,0,0,0.25)',
         ...style,
       }}
     >
