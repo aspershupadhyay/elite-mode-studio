@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
+
 import DesignCanvas from '../../studio/editor/Canvas'
 import LayerPanel from '../../studio/editor/LayerPanel'
 import PropertiesPanel from '../../studio/editor/PropertiesPanel'
@@ -7,11 +8,13 @@ import BottomToolbar from '../../studio/editor/BottomToolbar'
 import ContextMenu from '../../studio/editor/ContextMenu'
 import GuideOverlay from '../../studio/components/GuideOverlay'
 import RulerGuides from '../../studio/components/RulerGuides'
-import PagesPanel from '../../studio/components/PagesPanel'
+import PageScrollView from '../../studio/components/PageScrollView'
 import { preloadPopularFonts } from '../../studio/data/fonts'
 import FloatingTextToolbar from '../../studio/editor/FloatingTextToolbar'
 import PostElementsSelector from '../../studio/editor/PostElementsSelector'
 import { applyGeneratedContentFromProfile, injectGeneratedImage } from '../../studio/editor/canvas-core/content-apply'
+import { captureCanvasBlob } from '../../studio/editor/ExportPanel'
+import type { ExportOptions } from '../../studio/editor/ExportPanel'
 import { getActiveProfile } from '../../utils/profileStorage'
 import type { Template, Post, Page } from '@/types/domain'
 import type { CanvasHandle, GeneratedContentArgs, RulerGuideSet, PanOffset, CanvasSize } from '@/types/canvas'
@@ -156,8 +159,7 @@ export default function DesignStudio({
   // ── Multi-page state ───────────────────────────────────────────────────────
   const [pages, setPages]             = useState<Page[]>([makePage(0)])
   const [activePage, setActivePage]   = useState<number>(0)
-  const [pagesCollapsed, setPagesCollapsed]   = useState<boolean>(false)
-  const [layersCollapsed, setLayersCollapsed] = useState<boolean>(() => {
+const [layersCollapsed, setLayersCollapsed] = useState<boolean>(() => {
     const saved = localStorage.getItem('studio_layers_collapsed')
     return saved !== null ? saved === 'true' : true
   })
@@ -222,6 +224,7 @@ export default function DesignStudio({
       canvasJSON: p.canvasJSON,
       thumbnail: p.thumbnail,
       rendered:  true,
+      locked:    p.locked,
     }))
     setPages(restoredPages)
 
@@ -296,6 +299,7 @@ export default function DesignStudio({
         label:     p.label,
         canvasJSON: i === activeIdx ? liveJSON  : p.canvasJSON,
         thumbnail:  i === activeIdx ? liveThumb : p.thumbnail,
+        locked:    p.locked,
       }))
       const data: SessionData = {
         version:         '1.0',
@@ -407,6 +411,8 @@ export default function DesignStudio({
 
     switchingRef.current = false
     setInjectMsg({ msg: `Page ${newIdx + 1} of ${pagesRef.current.length}` })
+    // Refit canvas to the new card slot dimensions after JSON has settled
+    setTimeout(() => { canvasHandleRef.current?.zoomToFit() }, 180)
   }, [saveCurrentPage, applyContent])
 
   // ── Add blank page ────────────────────────────────────────────────────────
@@ -419,6 +425,23 @@ export default function DesignStudio({
     setTimeout(() => {
       setActivePage(newIdx)
       // Blank = clear canvas completely, no default elements, no template
+      canvasHandleRef.current?.clearCanvas?.()
+    }, 100)
+  }, [saveCurrentPage])
+
+  // ── Add blank page after a specific index ────────────────────────────────
+
+  const addPageAfter = useCallback((afterIdx: number): void => {
+    saveCurrentPage()
+    const newIdx = afterIdx + 1
+    const newPage = makePage(newIdx)
+    setPages(prev => {
+      const next = [...prev]
+      next.splice(newIdx, 0, newPage)
+      return next
+    })
+    setTimeout(() => {
+      setActivePage(newIdx)
       canvasHandleRef.current?.clearCanvas?.()
     }, 100)
   }, [saveCurrentPage])
@@ -487,7 +510,112 @@ export default function DesignStudio({
     triggerAutoSave()
   }, [triggerAutoSave])
 
+  // ── Toggle page lock ──────────────────────────────────────────────────────
+
+  const handleLockPage = useCallback((idx: number, locked: boolean): void => {
+    setPages(prev => prev.map((p, i) => i === idx ? { ...p, locked } : p))
+    triggerAutoSave()
+  }, [triggerAutoSave])
+
   // ── Reorder pages by drag ─────────────────────────────────────────────────
+
+  // -- Export all selected pages -----------------------------------------
+  //
+  // Electron: window.api.savePngBatch -> ONE folder-picker dialog,
+  //           every file written to disk silently, folder opens in Finder.
+  // Web fallback: sequential <a> downloads.
+
+  const handleExportAllPages = useCallback(async (opts: ExportOptions): Promise<void> => {
+    const handle = canvasHandleRef.current
+    if (!handle) return
+
+    const { format, scale, quality, transparent, selectedPages } = opts
+    const sorted = [...selectedPages].sort((a, b) => a - b)
+    if (!sorted.length) return
+
+    // Step 1: capture live active-page JSON synchronously before any state updates
+    const activeIdx    = activePageRef.current
+    const activePgJSON = handle.exportJSON?.() ?? null
+
+    // Build a snapshot of pages with the active page's live JSON patched in
+    const pagesSnap = pagesRef.current.map((p, i) =>
+      i === activeIdx ? { ...p, canvasJSON: activePgJSON } : p
+    )
+
+    const ext = format === 'jpeg' ? 'jpg' : format
+
+    // Helper: Blob -> base64 string (data after the comma)
+    const blobToBase64 = (blob: Blob): Promise<string> =>
+      new Promise((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload  = () => resolve((reader.result as string).split(',')[1])
+        reader.onerror = reject
+        reader.readAsDataURL(blob)
+      })
+
+    // Step 2: capture each page sequentially
+    // Track which page is currently on canvas to avoid redundant importJSON calls
+    let currentlyLoadedIdx = activeIdx
+    const files: { filename: string; base64: string }[] = []
+
+    try {
+      for (const idx of sorted) {
+        const page = pagesSnap[idx]
+
+        // Switch canvas to this page only when needed
+        if (idx !== currentlyLoadedIdx) {
+          const jsonToLoad = page?.canvasJSON ?? null
+          if (jsonToLoad) {
+            await handle.importJSON(jsonToLoad)
+            await new Promise<void>(r => setTimeout(r, 400))
+          } else {
+            handle.clearCanvas?.()
+            await new Promise<void>(r => setTimeout(r, 150))
+          }
+          currentlyLoadedIdx = idx
+        }
+
+        const canvas = handle.getCanvas()
+        if (!canvas) { console.error(`[Export] No canvas for page ${idx}`); continue }
+
+        try {
+          const blob   = await captureCanvasBlob(canvas, format, scale, quality, transparent)
+          const base64 = await blobToBase64(blob)
+          files.push({ filename: `design_p${idx + 1}_${scale}x.${ext}`, base64 })
+        } catch (err) {
+          console.error(`[Export] Capture failed for page ${idx}:`, err)
+        }
+      }
+    } finally {
+      // Restore active page canvas
+      const restoreJSON = activePgJSON ?? pagesSnap[activeIdx]?.canvasJSON ?? null
+      if (currentlyLoadedIdx !== activeIdx && restoreJSON) {
+        await handle.importJSON(restoreJSON)
+      }
+    }
+
+    if (!files.length) return
+
+    // Step 3: save — Electron gets one folder dialog, web gets sequential downloads
+
+    if (typeof window.api?.savePngBatch === 'function') {
+      // Electron: single folder picker, all files written silently, Finder opens
+      await window.api.savePngBatch({ files })
+      return
+    }
+
+    // Web fallback
+    for (const { filename, base64 } of files) {
+      const mime = ext === 'jpg' ? 'image/jpeg' : ext === 'svg' ? 'image/svg+xml' : `image/${ext}`
+      const blob = await fetch(`data:${mime};base64,${base64}`).then(r => r.blob())
+      const url  = URL.createObjectURL(blob)
+      const a    = document.createElement('a')
+      a.href = url; a.download = filename
+      document.body.appendChild(a); a.click(); document.body.removeChild(a)
+      await new Promise<void>(r => setTimeout(r, 100))
+      URL.revokeObjectURL(url)
+    }
+  }, [saveCurrentPage])
 
   const reorderPages = useCallback((fromIdx: number, toIdx: number): void => {
     if (fromIdx === toIdx) return
@@ -900,7 +1028,7 @@ export default function DesignStudio({
         />
       </div>
 
-      {/* Center — Toolbar + Canvas + Pages */}
+      {/* Center — Toolbar + Canva-style page scroll */}
       <div style={{
         position: 'absolute', top: 0, bottom: 0, left: leftW, right: RIGHT_W,
         display: 'flex', flexDirection: 'column', overflow: 'hidden',
@@ -916,10 +1044,25 @@ export default function DesignStudio({
           autoFormat={autoFormat}
           onAutoFormatToggle={handleAutoFormatToggle}
           pageCount={pages.length}
+          onExportAllPages={handleExportAllPages}
         />
 
-        {/* Canvas area */}
-        <div ref={studioRef} style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+        <PageScrollView
+          pages={pages}
+          activePage={activePage}
+          canvasSize={canvasSize}
+          onSwitch={switchPage}
+          onAddBlank={addBlankPage}
+          onAddAfter={addPageAfter}
+          onDuplicate={duplicatePage}
+          onDelete={deletePage}
+          onRename={renamePage}
+          onReorder={reorderPages}
+          onAddFromTemplate={addPageFromTemplate}
+          onLock={handleLockPage}
+          onFitCanvas={() => canvasHandleRef.current?.zoomToFit()}
+          activeSlotRef={studioRef}
+        >
           <DesignCanvas
             ref={canvasHandleRef}
             width={canvasSize.width}
@@ -956,22 +1099,7 @@ export default function DesignStudio({
             onZoomChange={handleZoomChange}
             onZoomFit={handleZoomFit}
           />
-        </div>
-
-        {/* Pages strip — only visible in multi-page mode */}
-        <PagesPanel
-          pages={pages}
-          activePage={activePage}
-          onSwitch={switchPage}
-          onAddBlank={addBlankPage}
-          onDuplicate={duplicatePage}
-          onDelete={deletePage}
-          onRename={renamePage}
-          onReorder={reorderPages}
-          onAddFromTemplate={addPageFromTemplate}
-          collapsed={pagesCollapsed}
-          onToggleCollapse={() => setPagesCollapsed(p => !p)}
-        />
+        </PageScrollView>
       </div>
 
       {/* Right — Properties */}

@@ -128,6 +128,8 @@ export interface Page {
    * Absent / undefined = not yet rendered (same as rendered: false)
    */
   status?: 'rendered' | 'images_ready'
+  /** When true the page shows a lock overlay and cannot be edited. */
+  locked?: boolean
 }
 
 // ── Output schema ──────────────────────────────────────────────────────────
