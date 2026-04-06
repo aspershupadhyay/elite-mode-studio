@@ -1,13 +1,14 @@
 /**
- * Sidebar — dual-column navigation
- * Left: 52px icon rail (always visible)
- * Right: 220px nav panel (collapses to hidden)
+ * Sidebar — single-panel collapsible navigation
+ * Collapsed: 60px icon-only rail
+ * Expanded:  260px icon + label panel
+ * Matches reference: white active cards, subtle section labels, user footer
  */
 
 import React, { useState } from 'react'
 import {
   Globe, FileText, Flame, Settings, History,
-  PenTool, Grid, LogOut, ChevronsUpDown,
+  PenTool, Grid, LogOut, PanelLeftClose, PanelLeftOpen,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { AuthUser } from '../types/ipc'
@@ -68,9 +69,6 @@ const SECTIONS: NavSection[] = [
   },
 ]
 
-// Flat list of all items for icon rail
-const ALL_ITEMS: NavItem[] = SECTIONS.flatMap(s => s.items)
-
 interface SidebarProps {
   current:        PageId
   onNav:          (id: PageId) => void
@@ -82,202 +80,180 @@ interface SidebarProps {
 export default function Sidebar({
   current, onNav, backendStatus, user, onLogout,
 }: SidebarProps): React.ReactElement {
-  const [panelOpen, setPanelOpen] = useState(true)
+  const [collapsed, setCollapsed] = useState(false)
+
+  const W = collapsed ? 60 : 260
 
   const statusColor =
     backendStatus === 'ok'       ? '#22c55e'             :
     backendStatus === 'degraded' ? 'var(--status-amber)' :
                                    'var(--status-red)'
 
-  /* ── Icon rail ── */
-  const rail = (
-    <div style={{
-      width: 52,
-      minWidth: 52,
-      background: 'var(--surface-0)',
-      borderRight: '1px solid var(--border-subtle)',
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      paddingTop: 44,
-      paddingBottom: 0,
-      flexShrink: 0,
-      gap: 2,
-    }}>
-      {/* Logo mark */}
-      <div
-        className="titlebar-drag-region"
-        style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          width: 52,
-          height: 44,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <div style={{
-          width: 28,
-          height: 28,
-          borderRadius: 8,
-          background: 'var(--accent)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontWeight: 800,
-          fontSize: 13,
-          color: 'var(--accent-fg)',
-          letterSpacing: '-0.03em',
-          flexShrink: 0,
-          cursor: 'pointer',
-        }}
-          onClick={() => setPanelOpen(v => !v)}
-        >
-          C
-        </div>
-      </div>
-
-      {/* Nav icons */}
-      <div style={{ flex: 1, width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, paddingTop: 4 }}>
-        {ALL_ITEMS.map(({ id, icon: Icon, label }) => {
-          const isActive = current === id
-          return (
-            <button
-              key={id}
-              title={label}
-              onClick={() => { onNav(id); if (!panelOpen) setPanelOpen(true) }}
-              style={{
-                width: 36,
-                height: 36,
-                borderRadius: 10,
-                border: isActive ? '1px solid var(--border-default)' : '1px solid transparent',
-                background: isActive ? 'var(--surface-2)' : 'transparent',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-                color: isActive ? 'var(--text-primary)' : 'var(--text-tertiary)',
-                transition: 'all 0.12s ease',
-                boxShadow: isActive ? '0 1px 3px rgba(0,0,0,0.10)' : 'none',
-              }}
-              onMouseEnter={e => {
-                if (!isActive) {
-                  e.currentTarget.style.background = 'var(--surface-3)'
-                  e.currentTarget.style.color = 'var(--text-secondary)'
-                }
-              }}
-              onMouseLeave={e => {
-                if (!isActive) {
-                  e.currentTarget.style.background = 'transparent'
-                  e.currentTarget.style.color = 'var(--text-tertiary)'
-                }
-              }}
-            >
-              <Icon size={15} />
-            </button>
-          )
-        })}
-      </div>
-
-      {/* Status dot at bottom */}
-      <div style={{
-        width: '100%',
-        height: 48,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        flexShrink: 0,
-        borderTop: '1px solid var(--border-subtle)',
-      }}>
-        <div style={{
-          width: 7,
-          height: 7,
-          borderRadius: '50%',
-          background: statusColor,
-          boxShadow: `0 0 6px ${statusColor}55`,
-        }} />
-      </div>
-    </div>
-  )
-
-  /* ── Nav panel ── */
-  const panel = panelOpen ? (
-    <div style={{
-      width: 220,
-      minWidth: 220,
+  return (
+    <aside style={{
+      width: W,
+      minWidth: W,
+      maxWidth: W,
       background: 'var(--surface-1)',
       borderRight: '1px solid var(--border-subtle)',
       display: 'flex',
       flexDirection: 'column',
       flexShrink: 0,
       overflow: 'hidden',
+      transition: 'width 0.2s cubic-bezier(0.4,0,0.2,1), min-width 0.2s cubic-bezier(0.4,0,0.2,1)',
     }}>
 
-      {/* App header */}
+      {/* ── Header ── */}
       <div
         className="titlebar-drag-region"
         style={{
-          height: 44,
+          height: 52,
           display: 'flex',
           alignItems: 'center',
-          padding: '0 14px',
+          justifyContent: collapsed ? 'center' : 'space-between',
+          padding: collapsed ? 0 : '0 12px 0 14px',
           borderBottom: '1px solid var(--border-subtle)',
-          gap: 10,
           flexShrink: 0,
+          gap: 10,
         }}
       >
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <p style={{
-            fontSize: 13,
-            fontWeight: 700,
-            color: 'var(--text-primary)',
-            margin: 0,
-            letterSpacing: '-0.02em',
+        {/* Logo mark + name */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, overflow: 'hidden' }}>
+          {/* Logo mark: dark rounded square, NOT accent color */}
+          <div style={{
+            width: 30,
+            height: 30,
+            borderRadius: 9,
+            background: 'var(--text-primary)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontWeight: 800,
+            fontSize: 14,
+            color: 'var(--surface-1)',
+            letterSpacing: '-0.04em',
+            flexShrink: 0,
           }}>
-            CreatorOS
-          </p>
-          <p style={{
-            fontSize: 10,
-            color: 'var(--text-tertiary)',
-            margin: 0,
-          }}>
-            AI Content Suite
-          </p>
-        </div>
-      </div>
+            C
+          </div>
 
-      {/* Nav items */}
-      <nav style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '8px 8px 4px' }}>
-        {SECTIONS.map(section => (
-          <div key={section.key} style={{ marginBottom: 4 }}>
-            {section.label && (
+          {!collapsed && (
+            <div style={{ minWidth: 0 }}>
+              <p style={{
+                fontSize: 13,
+                fontWeight: 700,
+                color: 'var(--text-primary)',
+                margin: 0,
+                letterSpacing: '-0.02em',
+                lineHeight: 1.2,
+                whiteSpace: 'nowrap',
+              }}>
+                CreatorOS
+              </p>
               <p style={{
                 fontSize: 10,
-                fontWeight: 600,
                 color: 'var(--text-tertiary)',
-                textTransform: 'uppercase',
-                letterSpacing: '0.07em',
-                margin: '8px 6px 4px',
+                margin: 0,
+                whiteSpace: 'nowrap',
+              }}>
+                AI Content Suite
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Collapse toggle */}
+        {!collapsed && (
+          <button
+            onClick={() => setCollapsed(true)}
+            title="Collapse sidebar"
+            style={{
+              background: 'transparent',
+              border: '1px solid var(--border-subtle)',
+              borderRadius: 7,
+              padding: 5,
+              cursor: 'pointer',
+              color: 'var(--text-tertiary)',
+              display: 'flex',
+              alignItems: 'center',
+              flexShrink: 0,
+              transition: 'all 0.12s',
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.background = 'var(--surface-3)'
+              e.currentTarget.style.color = 'var(--text-secondary)'
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.background = 'transparent'
+              e.currentTarget.style.color = 'var(--text-tertiary)'
+            }}
+          >
+            <PanelLeftClose size={14} />
+          </button>
+        )}
+
+        {/* Expand button when collapsed */}
+        {collapsed && (
+          <button
+            onClick={() => setCollapsed(false)}
+            title="Expand sidebar"
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: 60,
+              height: 52,
+              background: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          />
+        )}
+      </div>
+
+      {/* ── Nav ── */}
+      <nav style={{
+        flex: 1,
+        overflowY: 'auto',
+        overflowX: 'hidden',
+        padding: collapsed ? '8px 6px' : '8px 8px',
+      }}>
+        {SECTIONS.map(section => (
+          <div key={section.key} style={{ marginBottom: 2 }}>
+            {/* Section label — only when expanded */}
+            {section.label && !collapsed && (
+              <p style={{
+                fontSize: 11,
+                fontWeight: 500,
+                color: 'var(--text-tertiary)',
+                margin: '10px 8px 3px',
+                letterSpacing: '0',
               }}>
                 {section.label}
               </p>
             )}
+
             {section.items.map(({ id, icon: Icon, label }) => {
               const isActive = current === id
               return (
                 <button
                   key={id}
+                  title={collapsed ? label : undefined}
                   onClick={() => onNav(id)}
                   style={{
                     width: '100%',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: 10,
-                    padding: '8px 10px',
-                    borderRadius: 10,
-                    border: isActive ? '1px solid var(--border-default)' : '1px solid transparent',
+                    gap: collapsed ? 0 : 10,
+                    justifyContent: collapsed ? 'center' : 'flex-start',
+                    padding: collapsed ? '9px 0' : '8px 10px',
+                    borderRadius: 9,
+                    border: isActive
+                      ? '1px solid var(--border-default)'
+                      : '1px solid transparent',
                     background: isActive ? 'var(--surface-2)' : 'transparent',
                     color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)',
                     cursor: 'pointer',
@@ -286,7 +262,8 @@ export default function Sidebar({
                     letterSpacing: '-0.01em',
                     textAlign: 'left',
                     transition: 'all 0.12s ease',
-                    boxShadow: isActive ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                    boxShadow: isActive ? '0 1px 3px rgba(0,0,0,0.07)' : 'none',
+                    whiteSpace: 'nowrap',
                   }}
                   onMouseEnter={e => {
                     if (!isActive) {
@@ -301,8 +278,15 @@ export default function Sidebar({
                     }
                   }}
                 >
-                  <Icon size={15} style={{ flexShrink: 0, opacity: isActive ? 1 : 0.7 }} />
-                  <span>{label}</span>
+                  <Icon
+                    size={15}
+                    style={{
+                      flexShrink: 0,
+                      opacity: isActive ? 1 : 0.65,
+                      transition: 'opacity 0.12s',
+                    }}
+                  />
+                  {!collapsed && <span>{label}</span>}
                 </button>
               )
             })}
@@ -310,22 +294,30 @@ export default function Sidebar({
         ))}
       </nav>
 
-      {/* User footer */}
+      {/* ── User footer ── */}
       {user && (
         <div style={{
           borderTop: '1px solid var(--border-subtle)',
-          padding: '10px 10px',
+          padding: collapsed ? '10px 0' : '10px 10px',
           flexShrink: 0,
           display: 'flex',
           alignItems: 'center',
-          gap: 10,
+          justifyContent: collapsed ? 'center' : 'space-between',
+          gap: 8,
         }}>
           {/* Avatar */}
           {user.avatar_url ? (
             <img
               src={user.avatar_url}
               alt=""
-              style={{ width: 32, height: 32, borderRadius: '50%', flexShrink: 0, objectFit: 'cover', border: '1px solid var(--border-default)' }}
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: '50%',
+                flexShrink: 0,
+                objectFit: 'cover',
+                border: '1px solid var(--border-default)',
+              }}
               onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
             />
           ) : (
@@ -334,80 +326,95 @@ export default function Sidebar({
               height: 32,
               borderRadius: '50%',
               flexShrink: 0,
-              background: 'var(--accent)',
+              background: 'var(--surface-3)',
+              border: '1px solid var(--border-default)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               fontSize: 12,
               fontWeight: 700,
-              color: 'var(--accent-fg)',
+              color: 'var(--text-primary)',
             }}>
               {(user.name || user.email).charAt(0).toUpperCase()}
             </div>
           )}
 
-          {/* Name */}
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {user.name || user.email}
-            </p>
-            <p style={{ fontSize: 10, color: 'var(--text-tertiary)', margin: 0 }}>
-              {user.provider}
-            </p>
-          </div>
+          {!collapsed && (
+            <>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: 'var(--text-primary)',
+                  margin: 0,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}>
+                  {user.name || user.email}
+                </p>
+                <p style={{ fontSize: 10, color: 'var(--text-tertiary)', margin: 0 }}>
+                  {user.provider}
+                </p>
+              </div>
 
-          {/* Actions */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0 }}>
-            {onLogout && (
-              <button
-                onClick={onLogout}
-                title="Sign out"
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  cursor: 'pointer',
-                  color: 'var(--text-tertiary)',
-                  padding: 5,
-                  borderRadius: 7,
-                  display: 'flex',
-                  alignItems: 'center',
-                  transition: 'color 0.1s',
-                }}
-                onMouseEnter={e => { e.currentTarget.style.color = 'var(--status-red)' }}
-                onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-tertiary)' }}
-              >
-                <LogOut size={13} />
-              </button>
-            )}
-            <button
-              onClick={() => setPanelOpen(false)}
-              title="Collapse"
-              style={{
-                background: 'none',
-                border: 'none',
-                cursor: 'pointer',
-                color: 'var(--text-tertiary)',
-                padding: 5,
-                borderRadius: 7,
-                display: 'flex',
-                alignItems: 'center',
-                transition: 'color 0.1s',
-              }}
-              onMouseEnter={e => { e.currentTarget.style.color = 'var(--text-secondary)' }}
-              onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-tertiary)' }}
-            >
-              <ChevronsUpDown size={13} />
-            </button>
-          </div>
+              <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
+                {onLogout && (
+                  <button
+                    onClick={onLogout}
+                    title="Sign out"
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      color: 'var(--text-tertiary)',
+                      padding: 5,
+                      borderRadius: 7,
+                      display: 'flex',
+                      alignItems: 'center',
+                      transition: 'color 0.1s',
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.color = 'var(--status-red)' }}
+                    onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-tertiary)' }}
+                  >
+                    <LogOut size={13} />
+                  </button>
+                )}
+              </div>
+            </>
+          )}
         </div>
       )}
-    </div>
-  ) : null
 
-  return (
-    <aside style={{ display: 'flex', flexDirection: 'row', flexShrink: 0, position: 'relative' }}>
-      {rail}
-      {panel}
+      {/* ── Status dot ── */}
+      <div style={{
+        borderTop: '1px solid var(--border-subtle)',
+        padding: collapsed ? '8px 0' : '8px 14px',
+        flexShrink: 0,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: collapsed ? 'center' : 'flex-start',
+        gap: 7,
+      }}>
+        <div style={{
+          width: 6,
+          height: 6,
+          borderRadius: '50%',
+          background: statusColor,
+          flexShrink: 0,
+          boxShadow: `0 0 5px ${statusColor}66`,
+        }} />
+        {!collapsed && (
+          <span style={{
+            fontSize: 11,
+            color: backendStatus === 'ok' ? 'var(--text-tertiary)' : statusColor,
+          }}>
+            {backendStatus === 'ok' ? 'Online' :
+             backendStatus === 'degraded' ? 'Keys missing' :
+             backendStatus === 'checking' ? 'Connecting...' : 'Offline'}
+          </span>
+        )}
+      </div>
     </aside>
   )
 }
