@@ -12,7 +12,6 @@ import SetupModal from './pages/settings/SetupModal'
 import Login from './pages/auth/Login'
 import { apiFetch } from './api'
 import type { LoadTemplatePayload } from './pages/templates/TemplateGallery'
-import { hexToRgb } from './utils'
 import { bootstrapAuth, subscribeAuth, getAuthState, logout } from './auth'
 import type { AuthState } from './auth'
 import { bootstrapSchemas, getActiveSchema } from './utils/schemaStorage'
@@ -43,29 +42,13 @@ export function useActiveSchema(): SchemaContextValue {
 bootstrapSchemas()
 bootstrapProfiles()
 
-// ── Apply saved appearance on startup ─────────────────────────────────────────
-// Runs once before React renders — ensures CSS vars match localStorage prefs
-// so the correct accent + bg colors are active from frame 1.
-;(function applyStoredAppearance() {
+// ── Apply saved theme on startup ──────────────────────────────────────────────
+;(function applyStoredTheme() {
   try {
-    const raw = localStorage.getItem('app_appearance')
-    if (!raw) return
-    const app = JSON.parse(raw) as {
-      accent?: string; accentDim?: string; accentBorder?: string
-      bg?: string; bg2?: string; bg3?: string
-    }
-    const r = document.documentElement.style
-    if (app.accent) {
-      r.setProperty('--green',        app.accent)
-      r.setProperty('--green-rgb',    hexToRgb(app.accent))
-      r.setProperty('--accent-fg',    '#000')   /* always dark text on any accent fill */
-    }
-    if (app.accentDim)    r.setProperty('--green-dim',    app.accentDim)
-    if (app.accentBorder) r.setProperty('--green-border', app.accentBorder)
-    if (app.bg)  { r.setProperty('--bg', app.bg);  r.setProperty('--surface-0', app.bg); r.setProperty('--surface-1', app.bg); document.body.style.background = app.bg }
-    if (app.bg2) { r.setProperty('--bg2', app.bg2); r.setProperty('--surface-2', app.bg2) }
-    if (app.bg3) { r.setProperty('--bg3', app.bg3); r.setProperty('--surface-3', app.bg3) }
-  } catch { /* corrupt localStorage → use CSS defaults */ }
+    const theme = localStorage.getItem('app_theme') ?? 'dark'
+    if (theme === 'light') document.documentElement.setAttribute('data-theme', 'light')
+    else document.documentElement.removeAttribute('data-theme')
+  } catch { /* use default dark */ }
 })()
 
 // ── Pending data shapes ───────────────────────────────────────────────────────

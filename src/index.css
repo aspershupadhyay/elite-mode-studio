@@ -115,6 +115,39 @@ body {
 ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.18); }
 
+/* ═══════════════════════════════════════════════════════════════════
+   LIGHT THEME
+   ═══════════════════════════════════════════════════════════════════ */
+[data-theme="light"] {
+  --surface-0:  #F8F9FA;
+  --surface-1:  #FFFFFF;
+  --surface-2:  #F1F3F5;
+  --surface-3:  #E9ECEF;
+  --surface-4:  #DEE2E6;
+
+  --bg:    var(--surface-1);
+  --bg2:   var(--surface-2);
+  --bg3:   var(--surface-3);
+
+  --border-subtle:  rgba(0,0,0,0.06);
+  --border-default: rgba(0,0,0,0.10);
+  --border-strong:  rgba(0,0,0,0.18);
+  --border:   var(--border-default);
+
+  --text-primary:   #111111;
+  --text-secondary: #555555;
+  --text-tertiary:  #999999;
+  --text-inverse:   #FFFFFF;
+  --text:   var(--text-primary);
+  --text2:  var(--text-secondary);
+  --text3:  var(--text-tertiary);
+
+  color-scheme: light;
+}
+
+[data-theme="light"] ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.12); }
+[data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.22); }
+
 /* ── Studio panel utilities ─────────────────────────────────────── */
 .studio-panel {
   background: rgba(var(--elite-900-rgb, 17,17,17), 0.85);

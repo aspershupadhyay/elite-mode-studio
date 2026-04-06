@@ -158,12 +158,7 @@ export interface OutputSchema {
 // ── Settings / preferences ─────────────────────────────────────────────────
 
 export interface AppearanceConfig {
-  accent?: string
-  accentDim?: string
-  accentBorder?: string
-  bg?: string
-  bg2?: string
-  bg3?: string
+  theme?: 'dark' | 'light'
 }
 
 export interface StudioPrefs {
