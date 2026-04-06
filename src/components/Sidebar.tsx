@@ -107,11 +107,12 @@ export default function Sidebar({
       <div
         className="titlebar-drag-region"
         style={{
-          height: 52,
+          paddingTop: 38,
+          paddingBottom: 10,
           display: 'flex',
           alignItems: 'center',
           justifyContent: collapsed ? 'center' : 'space-between',
-          padding: collapsed ? 0 : '0 12px 0 14px',
+          padding: collapsed ? '38px 0 10px' : '38px 12px 10px 14px',
           borderBottom: '1px solid var(--border-subtle)',
           flexShrink: 0,
           gap: 10,
@@ -120,20 +121,24 @@ export default function Sidebar({
         {/* Logo mark + name */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, overflow: 'hidden' }}>
           {/* Logo mark: dark rounded square, NOT accent color */}
-          <div style={{
-            width: 30,
-            height: 30,
-            borderRadius: 9,
-            background: 'var(--text-primary)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontWeight: 800,
-            fontSize: 14,
-            color: 'var(--surface-1)',
-            letterSpacing: '-0.04em',
-            flexShrink: 0,
-          }}>
+          <div
+            onClick={collapsed ? () => setCollapsed(false) : undefined}
+            style={{
+              width: 30,
+              height: 30,
+              borderRadius: 9,
+              background: 'var(--text-primary)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontWeight: 800,
+              fontSize: 14,
+              color: 'var(--surface-1)',
+              letterSpacing: '-0.04em',
+              flexShrink: 0,
+              cursor: collapsed ? 'pointer' : 'default',
+            }}
+          >
             C
           </div>
 
@@ -192,26 +197,6 @@ export default function Sidebar({
           </button>
         )}
 
-        {/* Expand button when collapsed */}
-        {collapsed && (
-          <button
-            onClick={() => setCollapsed(false)}
-            title="Expand sidebar"
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              width: 60,
-              height: 52,
-              background: 'transparent',
-              border: 'none',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          />
-        )}
       </div>
 
       {/* ── Nav ── */}
