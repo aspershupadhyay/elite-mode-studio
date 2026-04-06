@@ -107,96 +107,74 @@ export default function Sidebar({
       <div
         className="titlebar-drag-region"
         style={{
-          paddingTop: 38,
-          paddingBottom: 10,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: collapsed ? 'center' : 'space-between',
           padding: collapsed ? '38px 0 10px' : '38px 12px 10px 14px',
           borderBottom: '1px solid var(--border-subtle)',
           flexShrink: 0,
-          gap: 10,
+          display: 'flex',
+          flexDirection: collapsed ? 'column' : 'row',
+          alignItems: 'center',
+          justifyContent: collapsed ? 'center' : 'space-between',
+          gap: collapsed ? 6 : 10,
         }}
       >
-        {/* Logo mark + name */}
+        {/* Logo mark */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, overflow: 'hidden' }}>
-          {/* Logo mark: dark rounded square, NOT accent color */}
-          <div
-            onClick={collapsed ? () => setCollapsed(false) : undefined}
-            style={{
-              width: 30,
-              height: 30,
-              borderRadius: 9,
-              background: 'var(--text-primary)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontWeight: 800,
-              fontSize: 14,
-              color: 'var(--surface-1)',
-              letterSpacing: '-0.04em',
-              flexShrink: 0,
-              cursor: collapsed ? 'pointer' : 'default',
-            }}
-          >
+          <div style={{
+            width: 30,
+            height: 30,
+            borderRadius: 9,
+            background: 'var(--text-primary)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontWeight: 800,
+            fontSize: 14,
+            color: 'var(--surface-1)',
+            letterSpacing: '-0.04em',
+            flexShrink: 0,
+          }}>
             C
           </div>
 
           {!collapsed && (
             <div style={{ minWidth: 0 }}>
-              <p style={{
-                fontSize: 13,
-                fontWeight: 700,
-                color: 'var(--text-primary)',
-                margin: 0,
-                letterSpacing: '-0.02em',
-                lineHeight: 1.2,
-                whiteSpace: 'nowrap',
-              }}>
+              <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', margin: 0, letterSpacing: '-0.02em', lineHeight: 1.2, whiteSpace: 'nowrap' }}>
                 CreatorOS
               </p>
-              <p style={{
-                fontSize: 10,
-                color: 'var(--text-tertiary)',
-                margin: 0,
-                whiteSpace: 'nowrap',
-              }}>
+              <p style={{ fontSize: 10, color: 'var(--text-tertiary)', margin: 0, whiteSpace: 'nowrap' }}>
                 AI Content Suite
               </p>
             </div>
           )}
         </div>
 
-        {/* Collapse toggle */}
-        {!collapsed && (
-          <button
-            onClick={() => setCollapsed(true)}
-            title="Collapse sidebar"
-            style={{
-              background: 'transparent',
-              border: '1px solid var(--border-subtle)',
-              borderRadius: 7,
-              padding: 5,
-              cursor: 'pointer',
-              color: 'var(--text-tertiary)',
-              display: 'flex',
-              alignItems: 'center',
-              flexShrink: 0,
-              transition: 'all 0.12s',
-            }}
-            onMouseEnter={e => {
-              e.currentTarget.style.background = 'var(--surface-3)'
-              e.currentTarget.style.color = 'var(--text-secondary)'
-            }}
-            onMouseLeave={e => {
-              e.currentTarget.style.background = 'transparent'
-              e.currentTarget.style.color = 'var(--text-tertiary)'
-            }}
-          >
-            <PanelLeftClose size={14} />
-          </button>
-        )}
-
+        {/* Collapse → when expanded / Expand ← when collapsed */}
+        <button
+          onClick={() => setCollapsed(c => !c)}
+          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          style={{
+            background: 'transparent',
+            border: '1px solid var(--border-subtle)',
+            borderRadius: 7,
+            padding: 5,
+            cursor: 'pointer',
+            color: 'var(--text-tertiary)',
+            display: 'flex',
+            alignItems: 'center',
+            flexShrink: 0,
+            transition: 'all 0.12s',
+          }}
+          onMouseEnter={e => {
+            e.currentTarget.style.background = 'var(--surface-3)'
+            e.currentTarget.style.color = 'var(--text-secondary)'
+          }}
+          onMouseLeave={e => {
+            e.currentTarget.style.background = 'transparent'
+            e.currentTarget.style.color = 'var(--text-tertiary)'
+          }}
+        >
+          {collapsed ? <PanelLeftOpen size={14} /> : <PanelLeftClose size={14} />}
+        </button>
       </div>
 
       {/* ── Nav ── */}
@@ -204,18 +182,20 @@ export default function Sidebar({
         flex: 1,
         overflowY: 'auto',
         overflowX: 'hidden',
-        padding: collapsed ? '8px 6px' : '8px 8px',
+        padding: '6px 8px',
+        display: collapsed ? 'flex' : 'block',
+        flexDirection: collapsed ? 'column' : undefined,
+        alignItems: collapsed ? 'center' : undefined,
+        gap: collapsed ? 2 : undefined,
       }}>
         {SECTIONS.map(section => (
-          <div key={section.key} style={{ marginBottom: 2 }}>
-            {/* Section label — only when expanded */}
+          <div key={section.key} style={{ marginBottom: collapsed ? 0 : 2, width: collapsed ? 'auto' : '100%' }}>
             {section.label && !collapsed && (
               <p style={{
                 fontSize: 11,
                 fontWeight: 500,
                 color: 'var(--text-tertiary)',
                 margin: '10px 8px 3px',
-                letterSpacing: '0',
               }}>
                 {section.label}
               </p>
@@ -229,16 +209,15 @@ export default function Sidebar({
                   title={collapsed ? label : undefined}
                   onClick={() => onNav(id)}
                   style={{
-                    width: '100%',
+                    width: collapsed ? 36 : '100%',
+                    height: collapsed ? 36 : 'auto',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: collapsed ? 0 : 10,
                     justifyContent: collapsed ? 'center' : 'flex-start',
-                    padding: collapsed ? '9px 0' : '8px 10px',
+                    gap: collapsed ? 0 : 10,
+                    padding: collapsed ? 0 : '8px 10px',
                     borderRadius: 9,
-                    border: isActive
-                      ? '1px solid var(--border-default)'
-                      : '1px solid transparent',
+                    border: isActive ? '1px solid var(--border-default)' : '1px solid transparent',
                     background: isActive ? 'var(--surface-2)' : 'transparent',
                     color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)',
                     cursor: 'pointer',
@@ -249,6 +228,7 @@ export default function Sidebar({
                     transition: 'all 0.12s ease',
                     boxShadow: isActive ? '0 1px 3px rgba(0,0,0,0.07)' : 'none',
                     whiteSpace: 'nowrap',
+                    flexShrink: 0,
                   }}
                   onMouseEnter={e => {
                     if (!isActive) {
