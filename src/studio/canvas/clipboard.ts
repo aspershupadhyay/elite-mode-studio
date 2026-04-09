@@ -230,8 +230,8 @@ function _extractImgSrc(html: string): string | null {
 
 // ── copyToSystemClipboard ─────────────────────────────────────────────────────
 /**
- * Renders the currently selected canvas object as a cropped PNG and writes it
- * to the OS clipboard so it can be pasted into other apps (Figma-style Cmd+C).
+ * Renders ONLY the selected canvas object as a PNG (transparent background)
+ * and writes it to the OS clipboard so it can be pasted into other apps.
  *
  * Returns: { success: boolean, error?: string }
  */
@@ -242,25 +242,32 @@ export async function copyToSystemClipboard(canvas: FabricCanvas | null): Promis
   const active = canvas.getActiveObject()
   if (!active) return { success: false, error: 'Nothing selected' }
 
-  // Temporarily deselect so selection handles don't appear in the export
+  const SCL    = 2
+  const MARGIN = 8
+
+  // Hide all other objects and clear the background for an isolated export
+  const savedBg = canvas.backgroundColor as string
+  const others = canvas.getObjects().filter(o => o !== active)
+  others.forEach(o => { o.visible = false })
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ;(canvas as any).backgroundColor = ''
   canvas.discardActiveObject()
   canvas.renderAll()
 
   const b = active.getBoundingRect()
+  const fullDataUrl = canvas.toDataURL({ format: 'png', quality: 1, multiplier: SCL })
 
-  // Export the full canvas at 2× resolution
-  const fullDataUrl = canvas.toDataURL({ format: 'png', quality: 1, multiplier: 2 })
-
-  // Re-select the object
+  // Restore canvas state
+  others.forEach(o => { o.visible = true })
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ;(canvas as any).backgroundColor = savedBg
   canvas.setActiveObject(active)
   canvas.renderAll()
 
-  // Crop to the bounding box of the selected object using an offscreen canvas
+  // Crop to the bounding box of the selected object
   return new Promise((resolve) => {
     const img = new window.Image()
     img.onload = async () => {
-      const SCL    = 2
-      const MARGIN = 4
       const sx = Math.max(0, (b.left   - MARGIN) * SCL)
       const sy = Math.max(0, (b.top    - MARGIN) * SCL)
       const sw = Math.min(img.width  - sx, (b.width  + MARGIN * 2) * SCL)

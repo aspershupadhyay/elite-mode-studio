@@ -51,6 +51,13 @@ export function RulerBar({
   const startTick = Math.floor((isH ? (RULER_SIZE - canvasOrigin) / zoom : (RULER_SIZE - canvasOrigin) / zoom) / interval) * interval
   const endTick   = Math.ceil(((length - canvasOrigin) / zoom) / interval) * interval
 
+  // Use CSS vars so ruler adapts to light/dark theme
+  const tickColor  = 'var(--border-strong)'
+  const minorColor = 'var(--border-default)'
+  const labelColor = 'var(--text-tertiary)'
+  const highlightColor = 'var(--border-subtle)'
+  const edgeColor  = 'var(--border-default)'
+
   const ticks: JSX.Element[] = []
   for (let cv = startTick; cv <= endTick; cv += interval) {
     const sp = canvasOrigin + cv * zoom - RULER_SIZE
@@ -60,12 +67,12 @@ export function RulerBar({
         <g key={cv}>
           <line
             x1={sp} y1={RULER_SIZE - 8} x2={sp} y2={RULER_SIZE}
-            stroke="rgba(255,255,255,0.3)" strokeWidth={1}
+            style={{ stroke: tickColor }} strokeWidth={1}
           />
           {sp > 2 && sp < length - RULER_SIZE - 10 && (
             <text
               x={sp + 2} y={RULER_SIZE - 10}
-              fill="rgba(255,255,255,0.45)" fontSize={8}
+              style={{ fill: labelColor }} fontSize={8}
               fontFamily="JetBrains Mono, monospace"
             >
               {Math.round(cv - canvasSize / 2)}
@@ -77,7 +84,7 @@ export function RulerBar({
               <line
                 key={j}
                 x1={mx} y1={RULER_SIZE - 4} x2={mx} y2={RULER_SIZE}
-                stroke="rgba(255,255,255,0.15)" strokeWidth={0.5}
+                style={{ stroke: minorColor }} strokeWidth={0.5}
               />
             )
           })}
@@ -88,11 +95,11 @@ export function RulerBar({
         <g key={cv}>
           <line
             x1={RULER_SIZE - 8} y1={sp} x2={RULER_SIZE} y2={sp}
-            stroke="rgba(255,255,255,0.3)" strokeWidth={1}
+            style={{ stroke: tickColor }} strokeWidth={1}
           />
           {sp > 2 && sp < length - RULER_SIZE - 6 && (
             <text
-              fill="rgba(255,255,255,0.45)" fontSize={8}
+              style={{ fill: labelColor }} fontSize={8}
               fontFamily="JetBrains Mono, monospace"
               textAnchor="middle" dominantBaseline="middle"
               transform={`translate(${RULER_SIZE / 2 - 1}, ${sp - 6}) rotate(-90)`}
@@ -106,7 +113,7 @@ export function RulerBar({
               <line
                 key={j}
                 x1={RULER_SIZE - 4} y1={my} x2={RULER_SIZE} y2={my}
-                stroke="rgba(255,255,255,0.15)" strokeWidth={0.5}
+                style={{ stroke: minorColor }} strokeWidth={0.5}
               />
             )
           })}
@@ -131,11 +138,11 @@ export function RulerBar({
         <rect
           x={canvasOrigin - RULER_SIZE} y={0}
           width={canvasExtent} height={RULER_SIZE}
-          fill="rgba(255,255,255,0.05)" stroke="none"
+          style={{ fill: highlightColor }} stroke="none"
         />
         {ticks}
-        <rect x={canvasOrigin - RULER_SIZE - 0.5} y={0} width={1} height={RULER_SIZE} fill="rgba(255,255,255,0.25)"/>
-        <rect x={canvasOrigin - RULER_SIZE + canvasExtent - 0.5} y={0} width={1} height={RULER_SIZE} fill="rgba(255,255,255,0.25)"/>
+        <rect x={canvasOrigin - RULER_SIZE - 0.5} y={0} width={1} height={RULER_SIZE} style={{ fill: edgeColor }}/>
+        <rect x={canvasOrigin - RULER_SIZE + canvasExtent - 0.5} y={0} width={1} height={RULER_SIZE} style={{ fill: edgeColor }}/>
       </svg>
     )
   }
@@ -155,11 +162,11 @@ export function RulerBar({
       <rect
         x={0} y={canvasOrigin - RULER_SIZE}
         width={RULER_SIZE} height={canvasExtent}
-        fill="rgba(255,255,255,0.05)" stroke="none"
+        style={{ fill: highlightColor }} stroke="none"
       />
       {ticks}
-      <rect x={0} y={canvasOrigin - RULER_SIZE - 0.5} width={RULER_SIZE} height={1} fill="rgba(255,255,255,0.25)"/>
-      <rect x={0} y={canvasOrigin - RULER_SIZE + canvasExtent - 0.5} width={RULER_SIZE} height={1} fill="rgba(255,255,255,0.25)"/>
+      <rect x={0} y={canvasOrigin - RULER_SIZE - 0.5} width={RULER_SIZE} height={1} style={{ fill: edgeColor }}/>
+      <rect x={0} y={canvasOrigin - RULER_SIZE + canvasExtent - 0.5} width={RULER_SIZE} height={1} style={{ fill: edgeColor }}/>
     </svg>
   )
 }

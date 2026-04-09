@@ -11,12 +11,13 @@ import AIConfigTab from './AIConfigTab'
 import SearchTab from './SearchTab'
 import AppearanceTab from './AppearanceTab'
 import StudioTab from './StudioTab'
+import BrandTab from './BrandTab'
 import type { AppearanceConfig, StudioPrefs } from '@/types/domain'
 import type { SearchConfig } from '@/types/api'
 
 // ── Tab definitions ───────────────────────────────────────────────────────────
 
-type TabId = 'general' | 'search' | 'models' | 'profiles' | 'appearance' | 'studio'
+type TabId = 'general' | 'search' | 'models' | 'profiles' | 'appearance' | 'studio' | 'brand'
 
 interface TabDef {
   id: TabId
@@ -26,6 +27,7 @@ interface TabDef {
 
 const TABS: TabDef[] = [
   { id: 'general',    icon: Icons.activity, label: 'General'       },
+  { id: 'brand',      icon: Icons.brand,    label: 'Brand Kit'     },
   { id: 'search',     icon: Icons.search,   label: 'Search Engine' },
   { id: 'models',     icon: Icons.cpu,      label: 'AI Models'     },
   { id: 'profiles',   icon: Icons.sparkle,  label: 'AI Profiles'   },
@@ -313,15 +315,16 @@ export default function Settings(): React.ReactElement {
         )}
       </nav>
 
-      {/* Content area — profiles tab gets full height (owns its own layout) */}
+      {/* Content area — profiles + brand tabs get full height (own their layout) */}
       <div style={{
         flex: 1,
-        overflowY: tab === 'profiles' ? 'hidden' : 'auto',
+        overflowY: (tab === 'profiles' || tab === 'brand') ? 'hidden' : 'auto',
         overflowX: 'hidden',
-        padding: tab === 'profiles' ? 0 : '28px 32px',
+        padding: (tab === 'profiles' || tab === 'brand') ? 0 : '28px 32px',
         position: 'relative',
       }}>
         {tab === 'profiles'   && <ProfilesTab />}
+        {tab === 'brand'      && <BrandTab />}
         {tab === 'general'    && (
           <TabGeneral health={health} onTest={runTest} testing={testing} testResult={testResult} />
         )}
@@ -337,19 +340,7 @@ export default function Settings(): React.ReactElement {
             savedKeys={savedKeys}
           />
         )}
-        {tab === 'models' && (
-          <AIConfigTab
-            nvKey={nvKey}
-            setNvKey={setNvKey}
-            nvKeySet={nvKeySet}
-            searchCfg={searchCfg as Parameters<typeof AIConfigTab>[0]['searchCfg']}
-            setSearchCfg={setSearchCfg as Parameters<typeof AIConfigTab>[0]['setSearchCfg']}
-            onSaveKeys={saveKeys}
-            savingKeys={savingKeys}
-            savedKeys={savedKeys}
-            onTest={runTest}
-          />
-        )}
+        {tab === 'models' && <AIConfigTab />}
         {tab === 'appearance' && (
           <AppearanceTab
             config={dummyAppearanceConfig}

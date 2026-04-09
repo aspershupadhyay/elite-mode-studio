@@ -1,74 +1,87 @@
 /**
- * fabric-init.ts — Bootstrap a Fabric.Canvas instance with Figma-style defaults.
+ * fabric-init.ts — Bootstrap a Fabric.Canvas instance with custom selection handles.
  *
- * Custom selection handles: white squares with subtle border, rotation icon above,
- * hover outlines, dashed multi-select border.
+ * Fabric.js v6 uses instance fields for controls (created via createControls()).
+ * Prototype.controls mutation has no effect. We override createControls() globally
+ * at module load time so every new FabricObject gets our custom renderers.
  */
 
 import * as fabric from 'fabric'
 import { BG } from '../../canvas/constants'
 
 // ── Handle dimensions ────────────────────────────────────────────────────────
-const CORNER_SIZE     = 8
-const MID_SIZE        = 6
-const HANDLE_COLOR    = '#FFFFFF'
-const HANDLE_BORDER   = '#B0B0B0'
-const HOVER_COLOR     = 'rgba(59,130,246,0.35)'  // light blue
-const SELECTION_COLOR = 'rgba(59,130,246,0.08)'
-const SELECTION_BORDER = 'rgba(59,130,246,0.6)'
+const CORNER_R        = 7    // corner circle radius
+const PILL_LONG       = 11   // pill capsule long-axis half-length
+const PILL_SHORT      = 5    // pill capsule short-axis half-length
+const HANDLE_FILL     = '#FFFFFF'
+const HANDLE_STROKE   = '#C96A42'
+const SELECTION_COLOR = 'rgba(201,106,66,0.08)'
+const SEL_BORDER      = '#C96A42'
 
-// ── Custom corner renderer (Figma-style white squares) ───────────────────────
-function renderSquareControl(
+// ── Renderers ────────────────────────────────────────────────────────────────
+
+function renderCornerCircle(
   ctx: CanvasRenderingContext2D,
   left: number,
   top: number,
-  _styleOverride: unknown,
-  fabricObject: fabric.FabricObject,
 ): void {
-  const size = fabricObject.cornerSize || CORNER_SIZE
   ctx.save()
-  ctx.fillStyle = HANDLE_COLOR
-  ctx.strokeStyle = HANDLE_BORDER
-  ctx.lineWidth = 1
-  ctx.shadowColor = 'rgba(0,0,0,0.15)'
+  ctx.shadowColor = 'rgba(0,0,0,0.22)'
+  ctx.shadowBlur = 4
+  ctx.shadowOffsetY = 1
+  ctx.beginPath()
+  ctx.arc(left, top, CORNER_R, 0, Math.PI * 2)
+  ctx.fillStyle = HANDLE_FILL
+  ctx.fill()
+  ctx.shadowColor = 'transparent'
+  ctx.strokeStyle = HANDLE_STROKE
+  ctx.lineWidth = 1.5
+  ctx.stroke()
+  ctx.restore()
+}
+
+function renderHPill(
+  ctx: CanvasRenderingContext2D,
+  left: number,
+  top: number,
+): void {
+  const hw = PILL_LONG, hh = PILL_SHORT, r = hh
+  ctx.save()
+  ctx.shadowColor = 'rgba(0,0,0,0.16)'
   ctx.shadowBlur = 3
-  ctx.shadowOffsetX = 0
   ctx.shadowOffsetY = 1
   ctx.beginPath()
-  ctx.roundRect(left - size / 2, top - size / 2, size, size, 1.5)
+  ctx.roundRect(left - hw, top - hh, hw * 2, hh * 2, r)
+  ctx.fillStyle = HANDLE_FILL
   ctx.fill()
   ctx.shadowColor = 'transparent'
+  ctx.strokeStyle = HANDLE_STROKE
+  ctx.lineWidth = 1.5
   ctx.stroke()
   ctx.restore()
 }
 
-// ── Midpoint handle renderer (smaller rectangles on edges) ───────────────────
-function renderMidControl(
+function renderVPill(
   ctx: CanvasRenderingContext2D,
   left: number,
   top: number,
-  _styleOverride: unknown,
-  fabricObject: fabric.FabricObject,
 ): void {
-  void fabricObject
-  const w = MID_SIZE + 2
-  const h = MID_SIZE
+  const hw = PILL_SHORT, hh = PILL_LONG, r = hw
   ctx.save()
-  ctx.fillStyle = HANDLE_COLOR
-  ctx.strokeStyle = HANDLE_BORDER
-  ctx.lineWidth = 1
-  ctx.shadowColor = 'rgba(0,0,0,0.12)'
-  ctx.shadowBlur = 2
+  ctx.shadowColor = 'rgba(0,0,0,0.16)'
+  ctx.shadowBlur = 3
   ctx.shadowOffsetY = 1
   ctx.beginPath()
-  ctx.roundRect(left - w / 2, top - h / 2, w, h, 1)
+  ctx.roundRect(left - hw, top - hh, hw * 2, hh * 2, r)
+  ctx.fillStyle = HANDLE_FILL
   ctx.fill()
   ctx.shadowColor = 'transparent'
+  ctx.strokeStyle = HANDLE_STROKE
+  ctx.lineWidth = 1.5
   ctx.stroke()
   ctx.restore()
 }
 
-// ── Rotation handle renderer (circular with icon) ────────────────────────────
 function renderRotateControl(
   ctx: CanvasRenderingContext2D,
   left: number,
@@ -76,9 +89,9 @@ function renderRotateControl(
 ): void {
   const r = 6
   ctx.save()
-  ctx.fillStyle = HANDLE_COLOR
-  ctx.strokeStyle = HANDLE_BORDER
-  ctx.lineWidth = 1
+  ctx.fillStyle = HANDLE_FILL
+  ctx.strokeStyle = HANDLE_STROKE
+  ctx.lineWidth = 1.5
   ctx.shadowColor = 'rgba(0,0,0,0.18)'
   ctx.shadowBlur = 4
   ctx.shadowOffsetY = 1
@@ -87,15 +100,12 @@ function renderRotateControl(
   ctx.fill()
   ctx.shadowColor = 'transparent'
   ctx.stroke()
-
-  // Draw rotation arrow icon
-  ctx.strokeStyle = '#666666'
+  ctx.strokeStyle = '#888'
   ctx.lineWidth = 1.2
   ctx.lineCap = 'round'
   ctx.beginPath()
   ctx.arc(left, top, 3, -Math.PI * 0.8, Math.PI * 0.4)
   ctx.stroke()
-  // Arrow tip
   const tipX = left + 3 * Math.cos(Math.PI * 0.4)
   const tipY = top + 3 * Math.sin(Math.PI * 0.4)
   ctx.beginPath()
@@ -106,13 +116,86 @@ function renderRotateControl(
   ctx.restore()
 }
 
+// ── Apply custom renders to a controls map ────────────────────────────────────
+function patchControls(controls: Record<string, fabric.Control>): void {
+  const cornerKeys = ['tl', 'tr', 'bl', 'br']
+  const hMidKeys   = ['mt', 'mb']
+  const vMidKeys   = ['ml', 'mr']
+
+  for (const key of cornerKeys) {
+    const c = controls[key]
+    if (c) {
+      c.render = renderCornerCircle as fabric.Control['render']
+      c.sizeX = CORNER_R * 2 + 6
+      c.sizeY = CORNER_R * 2 + 6
+    }
+  }
+  for (const key of hMidKeys) {
+    const c = controls[key]
+    if (c) {
+      c.render = renderHPill as fabric.Control['render']
+      c.sizeX = PILL_LONG * 2 + 4
+      c.sizeY = PILL_SHORT * 2 + 4
+    }
+  }
+  for (const key of vMidKeys) {
+    const c = controls[key]
+    if (c) {
+      c.render = renderVPill as fabric.Control['render']
+      c.sizeX = PILL_SHORT * 2 + 4
+      c.sizeY = PILL_LONG * 2 + 4
+    }
+  }
+  const mtr = controls['mtr']
+  if (mtr) {
+    mtr.render = renderRotateControl as fabric.Control['render']
+    mtr.offsetY = -28
+    mtr.cursorStyleHandler = () => 'grab'
+    mtr.withConnection = false
+  }
+}
+
+// ── Override createControls globally BEFORE any canvas/object is created ──────
+// In Fabric v6, controls are instance fields set by createControls() — prototype
+// mutation is ignored. Patching createControls() ensures every new object gets
+// our renderers automatically.
+;(function patchCreateControls() {
+  const proto = fabric.FabricObject.prototype as fabric.FabricObject & {
+    createControls?: () => Record<string, fabric.Control>
+  }
+  if (typeof proto.createControls !== 'function') return
+  const original = proto.createControls.bind(proto)
+  proto.createControls = function (this: fabric.FabricObject) {
+    const controls = original.call(this) as Record<string, fabric.Control>
+    patchControls(controls)
+    return controls
+  }
+})()
+
+// ── Also set visual defaults globally ────────────────────────────────────────
+Object.assign(fabric.FabricObject.ownDefaults, {
+  transparentCorners: false,
+  cornerColor:        HANDLE_FILL,
+  cornerStrokeColor:  HANDLE_STROKE,
+  cornerSize:         CORNER_R * 2,
+  cornerStyle:        'rect',
+  borderColor:        SEL_BORDER,
+  borderScaleFactor:  1.5,
+  borderDashArray:    undefined,
+  padding:            8,
+  snapAngle:          15,
+  snapThreshold:      5,
+  subTargetCheck:     true,
+})
+
+// ── initFabricCanvas ──────────────────────────────────────────────────────────
 export function initFabricCanvas(
   canvasEl: HTMLCanvasElement,
   width: number,
   height: number,
   accent: string,
 ): fabric.Canvas {
-  void accent  // accent no longer used for handles; kept for API compat
+  void accent
 
   const canvas = new fabric.Canvas(canvasEl, {
     width,
@@ -122,97 +205,70 @@ export function initFabricCanvas(
     preserveObjectStacking: true,
     stopContextMenu: true,
     fireRightClick: true,
-    // Rubber band selection styling
     selectionColor: SELECTION_COLOR,
-    selectionBorderColor: SELECTION_BORDER,
+    selectionBorderColor: SEL_BORDER,
     selectionLineWidth: 1,
   })
 
-  // ── Figma-style selection handles ────────────────────────────────────────
-  fabric.FabricObject.prototype.set({
-    transparentCorners:  false,
-    cornerColor:         HANDLE_COLOR,
-    cornerStrokeColor:   HANDLE_BORDER,
-    cornerSize:          CORNER_SIZE,
-    cornerStyle:         'rect',
-    borderColor:         SELECTION_BORDER,
-    borderScaleFactor:   1,
-    borderDashArray:     undefined,  // solid for single selection
-    padding:             1,
-    snapAngle:           15,        // rotation snaps to 15° increments
-    snapThreshold:       5,         // snap within 5° of target angle
-    subTargetCheck:      true,      // enable deep-select into groups on double-click
+  // Patch controls on every object added (belt-and-suspenders for v6)
+  canvas.on('object:added', ({ target }) => {
+    if (target && target.controls) {
+      patchControls(target.controls as Record<string, fabric.Control>)
+    }
   })
 
-  // Override corner rendering for all objects
-  const cornerControls = ['tl', 'tr', 'bl', 'br'] as const
-  const midControls    = ['mt', 'mb', 'ml', 'mr'] as const
-
-  cornerControls.forEach(key => {
-    const ctrl = fabric.FabricObject.prototype.controls[key]
-    if (ctrl) ctrl.render = renderSquareControl
-  })
-
-  midControls.forEach(key => {
-    const ctrl = fabric.FabricObject.prototype.controls[key]
-    if (ctrl) ctrl.render = renderMidControl
-  })
-
-  // Rotation control — position above object
-  const mtr = fabric.FabricObject.prototype.controls.mtr
-  if (mtr) {
-    mtr.render = renderRotateControl
-    mtr.offsetY = -25
-    mtr.cursorStyleHandler = () => 'grab'
-    mtr.withConnection = false  // no line connecting rotate handle to object
+  // Multi-select dashed border
+  const applySelBorder = () => {
+    const sel = canvas.getActiveObject()
+    if (sel instanceof fabric.ActiveSelection) {
+      sel.set({ borderDashArray: [6, 3], borderColor: SEL_BORDER, padding: 8 })
+      canvas.renderAll()
+    }
   }
+  canvas.on('selection:created', applySelBorder)
+  canvas.on('selection:updated', applySelBorder)
 
-  // ── Multi-select override: dashed border on ActiveSelection ───────────────
-  canvas.on('selection:created', (e) => {
-    const sel = e.selected && canvas.getActiveObject()
-    if (sel instanceof fabric.ActiveSelection) {
-      sel.set({
-        borderDashArray: [6, 3],
-        borderColor: SELECTION_BORDER,
-        cornerSize: CORNER_SIZE,
-        padding: 2,
-      })
-      canvas.renderAll()
-    }
-  })
-  canvas.on('selection:updated', (e) => {
-    const sel = e.selected && canvas.getActiveObject()
-    if (sel instanceof fabric.ActiveSelection) {
-      sel.set({
-        borderDashArray: [6, 3],
-        borderColor: SELECTION_BORDER,
-        cornerSize: CORNER_SIZE,
-        padding: 2,
-      })
+  // Hover outline — draw a border on the lower canvas after each full render.
+  // Controls (corners + pills) are only visible when the object is selected.
+  let hoveredObj: fabric.FabricObject | null = null
+
+  // mouse:move fires on every pointer movement (even during transforms), giving opt.target.
+  // mouse:over is skipped when _currentTransform is active, so we use mouse:move instead.
+  canvas.on('mouse:move', (opt) => {
+    const target = opt.target
+    const active = canvas.getActiveObjects()
+    const next = (target && target.selectable && target.evented && !active.includes(target))
+      ? target : null
+    if (hoveredObj !== next) {
+      hoveredObj = next
+      canvas.requestRenderAll()
     }
   })
 
-  // ── Hover outline (light blue on mouseover) ──────────────────────────────
-  type HoverTarget = fabric.FabricObject & { _eliteHoverBorder?: string }
+  canvas.on('selection:created', () => { hoveredObj = null })
+  canvas.on('selection:updated', () => { hoveredObj = null })
+  canvas.on('selection:cleared', () => { hoveredObj = null })
 
-  canvas.on('mouse:over', (opt) => {
-    const target = opt.target as HoverTarget | undefined
-    if (!target || target === canvas.getActiveObject()) return
-    if (!target.selectable || !target.evented) return
-    target._eliteHoverBorder = target.borderColor as string
-    target.set('borderColor', HOVER_COLOR)
-    target.set('hasBorders', true)
-    canvas.renderAll()
-  })
-
-  canvas.on('mouse:out', (opt) => {
-    const target = opt.target as HoverTarget | undefined
-    if (!target) return
-    if (target._eliteHoverBorder) {
-      target.set('borderColor', target._eliteHoverBorder)
-      delete target._eliteHoverBorder
-      canvas.renderAll()
-    }
+  // after:render fires from both renderAll() (ctx=contextContainer) and renderTop()
+  // (ctx=contextTop). We only draw on the lower canvas, so skip renderTop() events.
+  canvas.on('after:render', (e: { ctx: CanvasRenderingContext2D }) => {
+    if (!hoveredObj) return
+    const lowerCtx = canvas.getContext()
+    if (e.ctx !== lowerCtx) return
+    if (canvas.getActiveObjects().includes(hoveredObj)) { hoveredObj = null; return }
+    const PADDING = 8
+    const bound = hoveredObj.getBoundingRect()
+    e.ctx.save()
+    e.ctx.strokeStyle = SEL_BORDER
+    e.ctx.lineWidth = 1.5
+    e.ctx.setLineDash([])
+    e.ctx.strokeRect(
+      bound.left   - PADDING,
+      bound.top    - PADDING,
+      bound.width  + PADDING * 2,
+      bound.height + PADDING * 2,
+    )
+    e.ctx.restore()
   })
 
   return canvas

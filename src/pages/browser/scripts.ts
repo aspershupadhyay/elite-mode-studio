@@ -141,8 +141,23 @@ export const IMAGE_WATCHER_JS = `(function(){if(window.__ew)return;window.__ew=!
 
 export const POLL_JS = `(function(){const i=window.__ei||[];window.__ei=[];return JSON.stringify(i)})()` as const
 
+// Run this BEFORE submitting each new prompt.
+// Snapshots current oaiusercontent image URLs into window.__eliteSeenUrls
+// so the status script can exclude them and only return NEW images.
+export const SNAPSHOT_EXISTING_IMAGES_JS = `(function(){
+  var imgs = Array.from(document.querySelectorAll('img'))
+    .filter(function(img){
+      if(!img.src||!img.src.includes('oaiusercontent')) return false
+      var w=img.naturalWidth||img.width, h=img.naturalHeight||img.height
+      return w>=300 && h>=300
+    })
+  window.__eliteSeenUrls = new Set(imgs.map(function(img){ return img.src }))
+  return JSON.stringify({snapshotCount: window.__eliteSeenUrls.size})
+})()` as const
+
 // ChatGPT-specific quality check script
 // Returns: { done, imageUrl, blurry, hasChoice, generating, found, debugUrls }
+// Only considers images that were NOT present when SNAPSHOT_EXISTING_IMAGES_JS ran.
 export const CHATGPT_STATUS_JS = `(function(){
   const stopBtn = document.querySelector('button[aria-label="Stop generating"],button[data-testid="stop-button"],button[aria-label="Stop streaming"]')
   const sendBtn = (
@@ -164,9 +179,12 @@ export const CHATGPT_STATUS_JS = `(function(){
     }catch(e){}
   }
 
+  // Exclude images that existed before this job's prompt was submitted
+  const seenUrls = window.__eliteSeenUrls || new Set()
+
   const allImgs = Array.from(document.querySelectorAll('img'))
   const oaiImgs = allImgs
-    .filter(img => img.src && img.src.includes('oaiusercontent'))
+    .filter(img => img.src && img.src.includes('oaiusercontent') && !seenUrls.has(img.src))
     .filter(img => {
       const w = img.naturalWidth || img.width
       const h = img.naturalHeight || img.height
@@ -175,14 +193,14 @@ export const CHATGPT_STATUS_JS = `(function(){
 
   const estuaryImgs = allImgs
     .filter(img => {
-      if (!img.src || !img.src.includes('estuary')) return false
+      if (!img.src || !img.src.includes('estuary') || seenUrls.has(img.src)) return false
       const w = img.naturalWidth || img.width
       const h = img.naturalHeight || img.height
       return w >= 600 && h >= 600
     })
 
   const choiceImgs = Array.from(document.querySelectorAll('.grid img,[data-testid*="choice"] img,[class*="grid"] img'))
-    .filter(img => img.src && img.src.includes('oaiusercontent') && (img.naturalWidth||img.width) >= 256)
+    .filter(img => img.src && img.src.includes('oaiusercontent') && !seenUrls.has(img.src) && (img.naturalWidth||img.width) >= 256)
   const hasChoice = choiceImgs.length >= 2
 
   const mainCandidates = hasChoice ? choiceImgs : oaiImgs

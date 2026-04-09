@@ -371,7 +371,7 @@ export default function LayerPanel({ canvas, selectedObject, canvasRef, tick, co
             'transition-all duration-75 border-l-[2px]',
             item.obj === selectedObject
               ? 'bg-accent/10 border-accent'
-              : 'border-transparent hover:bg-white/[0.04]',
+              : 'border-transparent layer-row-hover',
           ].join(' ')}
         >
           <button
@@ -434,7 +434,7 @@ export default function LayerPanel({ canvas, selectedObject, canvasRef, tick, co
         <button
           onClick={onToggleCollapse}
           title={collapsed ? 'Expand Layers' : 'Collapse Layers'}
-          className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded text-warm-faint hover:text-warm hover:bg-white/[0.06] transition-colors cursor-pointer"
+          className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded text-warm-faint hover:text-warm layer-row-hover transition-colors cursor-pointer"
           style={{ marginLeft: collapsed ? 'auto' : undefined }}
         >
           {/* › when collapsed (expand), ‹ when expanded (collapse) */}

@@ -60,11 +60,14 @@ const TabView = React.memo(function TabView({
         url:     u || tab.url,
         canBack: el.canGoBack(),
         canFwd:  el.canGoForward(),
-        title:   '',
         favicon: faviconUrl(u || tab.url),
       })
       // Inject image watcher to monitor new images that appear in the DOM
       el.executeJavaScript(IMAGE_WATCHER_JS).catch(() => {})
+      // Sync title from DOM in case page-title-updated fired before did-stop-loading
+      el.executeJavaScript('document.title').then((t: unknown) => {
+        if (typeof t === 'string' && t.trim()) onUpdate(tab.id, { title: t.trim() })
+      }).catch(() => {})
     })
 
     el.addEventListener('did-fail-load', (e: Event & { errorCode?: number; errorDescription?: string; validatedURL?: string }) => {
@@ -105,34 +108,25 @@ const TabView = React.memo(function TabView({
       onNewTab(e.url)
     })
 
-    // Context menu — Electron sends params, main.ts shows native menu
-    el.addEventListener('contextmenu' as 'did-start-loading', ((ce: Event) => {
-      const me = ce as MouseEvent
-      el.executeJavaScript(`
-        (function(){
-          const el = document.elementFromPoint(${0}, ${0});
-          return JSON.stringify({
-            linkUrl: (() => { const a = document.elementFromPoint(${0},${0})?.closest('a'); return a?.href || '' })(),
-            srcUrl:  (() => { const img = document.elementFromPoint(${0},${0})?.closest('img'); return img?.src || '' })(),
-            selectionText: window.getSelection()?.toString() || '',
-            isEditable: !!(document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA' || (document.activeElement as HTMLElement).isContentEditable)),
-            pageURL: window.location.href,
-          });
-        })()
-      `).then((raw: unknown) => {
-        try {
-          const info = JSON.parse(raw as string) as { linkUrl?: string; srcUrl?: string; selectionText?: string; isEditable?: boolean; pageURL?: string }
-          window.api.showContextMenu?.({
-            x: me.screenX, y: me.screenY,
-            linkUrl: info.linkUrl || undefined,
-            srcUrl: info.srcUrl || undefined,
-            selectionText: info.selectionText || undefined,
-            isEditable: info.isEditable,
-            pageURL: info.pageURL,
-          })
-        } catch {}
-      }).catch(() => {})
-    }))
+    // Context menu — uses the webview's native context-menu event (Electron 29+)
+    // which provides accurate link/image/selection params from Chromium directly.
+    el.addEventListener('context-menu', ((ce: Event) => {
+      const e = ce as Event & {
+        params?: {
+          linkURL?: string; srcURL?: string; selectionText?: string
+          isEditable?: boolean; pageURL?: string; mediaType?: string
+        }
+      }
+      const p = e.params
+      if (!p) return
+      window.api.showContextMenu?.({
+        linkUrl:       p.linkURL       || undefined,
+        srcUrl:        p.srcURL        || undefined,
+        selectionText: p.selectionText || undefined,
+        isEditable:    p.isEditable,
+        pageURL:       p.pageURL,
+      })
+    }) as EventListener)
   }, [tab.id, wvMap, onUpdate, onNewTab]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Image poll — only when there's an active injection

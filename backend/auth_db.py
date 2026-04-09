@@ -26,7 +26,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
-DB_PATH = Path(__file__).parent / "data" / "auth.db"
+from config import DATA_DIR
+DB_PATH = DATA_DIR / "auth.db"
 SESSION_TTL_DAYS = 30
 
 _DDL = """

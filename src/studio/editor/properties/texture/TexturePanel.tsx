@@ -1,9 +1,14 @@
 /**
- * TexturePanel.tsx — Shared texture editor UI.
- * Used under "Text Color" (text objects) and "Fill" (shapes/frames).
- * Pure UI: calls onChange/onClear; parent handles engine calls.
+ * TexturePanel.tsx — Hybrid-aware texture editor UI.
+ *
+ * New in this version:
+ *  - `selectionCharCount` prop: 0 = whole object, N = N chars selected in edit mode
+ *  - Context badge: "Applying to: Whole text" | "Applying to: Selection (N chars)"
+ *  - Larger 4-col preset thumbnails with "Aa" text overlay (shows texture feel on text)
+ *  - Drag-and-drop custom texture upload
+ *  - Context-aware Clear button label
  */
-import React, { useState, useEffect, type ChangeEvent } from 'react'
+import React, { useState, useEffect, useRef, useCallback, type ChangeEvent, type DragEvent } from 'react'
 import { PRESETS, getPresetSrc, PRESET_CATEGORIES, presetToParams } from './presets'
 import type { PresetCategory } from './presets'
 import type { TextureParams, BlendMode } from './types'
@@ -40,14 +45,14 @@ function SR({
   )
 }
 
-// ── Preset grid ────────────────────────────────────────────────────────────────
+// ── Preset grid with "Aa" text overlay ─────────────────────────────────────────
 function PresetGrid({ selected, onSelect }: {
   selected?: string
   onSelect: (id: string, src: string) => void
 }): JSX.Element {
-  const [cat, setCat]           = useState<PresetCategory>('grain')
-  const [thumbs, setThumbs]     = useState<Record<string, string>>({})
-  const catPresets              = PRESETS.filter(p => p.category === cat)
+  const [cat, setCat]       = useState<PresetCategory>('grain')
+  const [thumbs, setThumbs] = useState<Record<string, string>>({})
+  const catPresets          = PRESETS.filter(p => p.category === cat)
 
   useEffect(() => {
     const next: Record<string, string> = {}
@@ -70,51 +75,105 @@ function PresetGrid({ selected, onSelect }: {
           </button>
         ))}
       </div>
-      {/* Thumbnail grid */}
-      <div className="grid grid-cols-5 gap-1">
+
+      {/* 4-col thumbnail grid (larger than before) with "Aa" overlay */}
+      <div className="grid grid-cols-4 gap-1.5">
         {catPresets.map(p => {
           const src = thumbs[p.id] ?? ''
+          const isSelected = selected === p.id
           return (
             <button key={p.id} title={p.name} onClick={() => onSelect(p.id, src)}
-              className={`aspect-square rounded overflow-hidden border transition-all cursor-pointer ${
-                selected === p.id
-                  ? 'border-accent ring-1 ring-accent/40 scale-105'
-                  : 'border-elite-600/30 hover:border-accent/40'
+              className={`relative aspect-square rounded-md overflow-hidden border transition-all cursor-pointer ${
+                isSelected
+                  ? 'border-accent ring-1 ring-accent/40 scale-105 shadow-md shadow-accent/20'
+                  : 'border-elite-600/30 hover:border-accent/40 hover:scale-102'
               }`}
-              style={{ backgroundImage: src ? `url(${src})` : undefined, backgroundSize: 'cover' }}>
-              {!src && <span className="text-[8px] text-warm-faint p-1 block text-center leading-tight">{p.name}</span>}
+              style={{
+                backgroundImage: src ? `url(${src})` : undefined,
+                backgroundSize: 'cover',
+                backgroundPosition: 'center',
+              }}>
+              {/* "Aa" text overlay — mix-blend-mode shows texture feel on text */}
+              {src && (
+                <span
+                  className="absolute inset-0 flex items-center justify-center text-[13px] font-black leading-none select-none"
+                  style={{ mixBlendMode: 'multiply', color: '#111', fontFamily: 'Georgia, serif' }}>
+                  Aa
+                </span>
+              )}
+              {!src && (
+                <span className="text-[8px] text-warm-faint p-1 block text-center leading-tight">{p.name}</span>
+              )}
+              {/* Selected indicator dot */}
+              {isSelected && (
+                <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-accent shadow-sm" />
+              )}
             </button>
           )
         })}
       </div>
+      {catPresets.length === 0 && (
+        <p className="text-[9px] text-warm-faint/60 text-center py-2">No presets in this category</p>
+      )}
     </div>
   )
 }
 
 // ── Main panel ─────────────────────────────────────────────────────────────────
 export interface TexturePanelProps {
-  params: TextureParams
+  params:   TextureParams
   onChange: (p: TextureParams) => void
-  onClear: () => void
+  onClear:  () => void
+  /**
+   * 0  = texture applies to the whole text object (no selection active)
+   * N  = texture applies to the selected N characters
+   */
+  selectionCharCount?: number
 }
 
-export function TexturePanel({ params, onChange, onClear }: TexturePanelProps): JSX.Element {
+export function TexturePanel({ params, onChange, onClear, selectionCharCount = 0 }: TexturePanelProps): JSX.Element {
+  const [dragOver, setDragOver] = useState(false)
+  const uploadRef = useRef<HTMLInputElement>(null)
+
   const up = <K extends keyof TextureParams>(k: K, v: TextureParams[K]): void =>
     onChange({ ...params, [k]: v })
 
-  const upload = (e: ChangeEvent<HTMLInputElement>): void => {
-    const f = e.target.files?.[0]
-    if (!f) return
+  // ── Upload from file input ─────────────────────────────────────────────────
+  const processFile = useCallback((file: File | null | undefined): void => {
+    if (!file) return
+    if (!file.type.startsWith('image/')) return
     const reader = new FileReader()
     reader.onload = ev => onChange({ ...params, src: ev.target?.result as string, presetId: undefined })
-    reader.readAsDataURL(f)
+    reader.readAsDataURL(file)
+  }, [params, onChange])
+
+  const handleUpload = (e: ChangeEvent<HTMLInputElement>): void => {
+    processFile(e.target.files?.[0])
     e.target.value = ''
+  }
+
+  // ── Drag-and-drop ──────────────────────────────────────────────────────────
+  const handleDragOver = (e: DragEvent<HTMLLabelElement>): void => {
+    e.preventDefault()
+    e.stopPropagation()
+    setDragOver(true)
+  }
+  const handleDragLeave = (): void => setDragOver(false)
+  const handleDrop = (e: DragEvent<HTMLLabelElement>): void => {
+    e.preventDefault()
+    e.stopPropagation()
+    setDragOver(false)
+    processFile(e.dataTransfer.files?.[0])
   }
 
   const selectPreset = (id: string, src: string): void => {
     const merged = presetToParams(id, src)
     onChange({ ...DEFAULT_TEXTURE, ...merged })
   }
+
+  // ── Context info ───────────────────────────────────────────────────────────
+  const isCharLevel   = selectionCharCount > 0
+  const clearLabel    = isCharLevel ? `Clear from ${selectionCharCount} char${selectionCharCount !== 1 ? 's' : ''}` : 'Clear'
 
   return (
     <div
@@ -125,6 +184,21 @@ export function TexturePanel({ params, onChange, onClear }: TexturePanelProps): 
       }}
     >
 
+      {/* ── Context badge ── */}
+      <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-semibold ${
+        isCharLevel
+          ? 'bg-accent/12 border border-accent/30 text-accent'
+          : 'bg-white/[0.04] border border-white/[0.07] text-warm-faint'
+      }`}>
+        <span className="text-[11px] leading-none">{isCharLevel ? '✦' : '◻'}</span>
+        <span>
+          Applying to:{' '}
+          <span className={isCharLevel ? 'text-accent' : 'text-warm'}>
+            {isCharLevel ? `Selection (${selectionCharCount} char${selectionCharCount !== 1 ? 's' : ''})` : 'Whole text'}
+          </span>
+        </span>
+      </div>
+
       {/* ── Source ── */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
@@ -132,21 +206,43 @@ export function TexturePanel({ params, onChange, onClear }: TexturePanelProps): 
           {params.src && (
             <button onClick={onClear}
               className="text-[9px] text-warm-faint hover:text-red-400 cursor-pointer transition-colors">
-              Clear
+              {clearLabel}
             </button>
           )}
         </div>
+
         <PresetGrid selected={params.presetId} onSelect={selectPreset}/>
-        {/* Upload */}
-        <label className="flex items-center gap-2 px-3 py-1.5 bg-elite-800 border border-elite-600/40 rounded cursor-pointer hover:border-accent/40 transition-colors">
+
+        {/* ── Upload / drop zone ── */}
+        <label
+          className={`flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-all ${
+            dragOver
+              ? 'bg-accent/15 border-2 border-accent/60 border-dashed scale-[0.99]'
+              : 'bg-elite-800 border border-elite-600/40 hover:border-accent/40'
+          }`}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}>
           {params.src && !params.presetId
             ? <img src={params.src} className="w-6 h-6 rounded object-cover shrink-0" alt="tex"/>
-            : <span className="text-warm-faint text-[13px] shrink-0 leading-none">↑</span>
+            : (
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                className={dragOver ? 'text-accent' : 'text-warm-faint'}>
+                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                <polyline points="17 8 12 3 7 8"/>
+                <line x1="12" y1="3" x2="12" y2="15"/>
+              </svg>
+            )
           }
-          <span className="text-[10px] text-warm-faint">
-            {params.src && !params.presetId ? 'Change image' : 'Upload custom (PNG/JPG)'}
+          <span className={`text-[10px] ${dragOver ? 'text-accent' : 'text-warm-faint'}`}>
+            {dragOver
+              ? 'Drop image to use as texture'
+              : params.src && !params.presetId
+              ? 'Change image'
+              : 'Upload or drop PNG / JPG'}
           </span>
-          <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={upload}/>
+          <input ref={uploadRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handleUpload}/>
         </label>
       </div>
 
@@ -205,6 +301,13 @@ export function TexturePanel({ params, onChange, onClear }: TexturePanelProps): 
           ))}
         </select>
       </div>
+
+      {/* ── Clear (when no texture picked yet, show full-width button) ── */}
+      {!params.src && (
+        <p className="text-[9px] text-warm-faint/50 text-center">
+          Pick a preset or upload an image to apply texture
+        </p>
+      )}
 
     </div>
   )

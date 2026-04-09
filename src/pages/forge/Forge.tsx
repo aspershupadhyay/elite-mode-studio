@@ -20,6 +20,7 @@ import {
   TrendingUp, RefreshCw, Layers, StopCircle,
   Calendar, Zap,
 } from 'lucide-react'
+import ModelBadge from './ModelBadge'
 import type { Post, Template } from '@/types/domain'
 import { type OutSettings } from './PostResultsList'
 import BatchStream, { type StreamPost, type CampaignBriefData } from './BatchStream'
@@ -522,8 +523,9 @@ export default function Forge({ onSendToStudio, onBatchToStudio, generatedImages
     <PageShell title="Forge" subtitle="">
       <div style={{ maxWidth: 760 }}>
 
-        {/* ── Platform tabs ──────────────────────────────────────────────── */}
-        <div style={{ display: 'flex', gap: 6, marginBottom: 22 }}>
+        {/* ── Top bar: platform tabs + model badge ───────────────────────── */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 22 }}>
+          <div style={{ flex: 1, display: 'flex', gap: 6 }}>
           {PLATFORMS.map(({ id, label, icon: Icon }) => {
             const pm = PLATFORM_META[id]
             const isSelected = platform === id
@@ -548,6 +550,8 @@ export default function Forge({ onSendToStudio, onBatchToStudio, generatedImages
               </button>
             )
           })}
+          </div>
+          <ModelBadge />
         </div>
 
         {/* ── Config strip ───────────────────────────────────────────────── */}

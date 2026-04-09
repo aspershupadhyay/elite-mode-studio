@@ -9,11 +9,8 @@ import TemplateGallery from './pages/templates/TemplateGallery'
 import PostHistory from './pages/history/PostHistory'
 import Settings from './pages/settings/Settings'
 import SetupModal from './pages/settings/SetupModal'
-import Login from './pages/auth/Login'
 import { apiFetch } from './api'
 import type { LoadTemplatePayload } from './pages/templates/TemplateGallery'
-import { bootstrapAuth, subscribeAuth, getAuthState, logout } from './auth'
-import type { AuthState } from './auth'
 import { bootstrapSchemas, getActiveSchema } from './utils/schemaStorage'
 import type { ContentSchemaConfig } from './types/schema'
 import { bootstrapProfiles } from './utils/profileStorage'
@@ -189,7 +186,6 @@ export default function App(): React.ReactElement {
   const [pendingContent, setContent]  = useState<PendingContent | undefined>(undefined)
   const [pendingBatch, setPendingBatch] = useState<PendingBatch | undefined>(undefined)
   const [galleryRefreshKey, setGalleryRefreshKey] = useState<number>(0)
-  const [authState, setAuthState] = useState<AuthState>(getAuthState)
   const [activeSchema, setActiveSchema] = useState<ContentSchemaConfig>(getActiveSchema)
   const [setupNeeded,  setSetupNeeded]  = useState(false)
   const [setupMissing, setSetupMissing] = useState<string[]>([])
@@ -281,11 +277,6 @@ export default function App(): React.ReactElement {
   }, [])
 
   useEffect(() => {
-    bootstrapAuth()
-    return subscribeAuth(setAuthState)
-  }, [])
-
-  useEffect(() => {
     void apiFetch('/api/health').then(({ data, error }) => {
       if (error) { setStatus('down'); return }
       setStatus((data as HealthApiResponse)?.missing_keys?.length ? 'degraded' : 'ok')
@@ -317,27 +308,12 @@ export default function App(): React.ReactElement {
     setTimeout(() => void startImageGenForBatch(posts), 1500)
   }
 
-  if (authState.status === 'checking') {
-    return (
-      <div style={{ position: 'fixed', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--surface-0, #0a0a0a)' }}>
-        <div style={{ display: 'flex', gap: 7 }}>
-          {[0,1,2].map(i => <div key={i} style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--green, #10b981)', animation: 'pulse 1.2s infinite', animationDelay: `${i*0.2}s` }} />)}
-          <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:.15}}`}</style>
-        </div>
-      </div>
-    )
-  }
-
-  if (authState.status === 'logged_out' || authState.status === 'logging_in') {
-    return <Login status={authState.status} error={authState.error} />
-  }
-
   return (
     <SchemaContext.Provider value={{ activeSchema, refreshSchema }}>
       <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden', background: 'var(--surface-0)' }}>
         <BackendBanner status={backendStatus} />
         <div style={{ display: 'flex', flex: 1, overflow: 'hidden', position: 'relative' }}>
-          <Sidebar current={page} onNav={setPage} backendStatus={backendStatus} user={authState.user} onLogout={() => { void logout() }} />
+          <Sidebar current={page} onNav={setPage} backendStatus={backendStatus} />
           <main style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
             <PageSlot active={page === 'web'}>
               <PageErrorBoundary>

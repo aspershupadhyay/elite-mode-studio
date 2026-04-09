@@ -100,7 +100,51 @@ function waitForBackend(timeoutMs = 10_000): Promise<void> {
   })
 }
 
+function buildAppMenu(): void {
+  const isMac = process.platform === 'darwin'
+  const template: Electron.MenuItemConstructorOptions[] = [
+    ...(isMac ? [{ label: app.name, submenu: [
+      { role: 'about' as const },
+      { type: 'separator' as const },
+      { role: 'services' as const },
+      { type: 'separator' as const },
+      { role: 'hide' as const },
+      { role: 'hideOthers' as const },
+      { role: 'unhide' as const },
+      { type: 'separator' as const },
+      { role: 'quit' as const },
+    ]}] : []),
+    { label: 'Edit', submenu: [
+      { role: 'undo' as const },
+      { role: 'redo' as const },
+      { type: 'separator' as const },
+      { role: 'cut' as const },
+      { role: 'copy' as const },
+      { role: 'paste' as const },
+      { role: 'selectAll' as const },
+    ]},
+    { label: 'View', submenu: [
+      // Override CmdOrCtrl+R so it reloads the active browser tab, not the Electron window
+      { label: 'Reload Tab', accelerator: 'CmdOrCtrl+R',
+        click: () => { mainWindow?.webContents.send('browser:reload') } },
+      { type: 'separator' as const },
+      { role: 'toggleDevTools' as const },
+      { role: 'togglefullscreen' as const },
+    ]},
+    { label: 'Window', submenu: [
+      { role: 'minimize' as const },
+      { role: 'zoom' as const },
+      ...(isMac ? [
+        { type: 'separator' as const },
+        { role: 'front' as const },
+      ] : [{ role: 'close' as const }]),
+    ]},
+  ]
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template))
+}
+
 function createWindow(): void {
+  buildAppMenu()
   mainWindow = new BrowserWindow({
     width: 1440, height: 900, minWidth: 1100, minHeight: 700,
     titleBarStyle: 'hiddenInset', backgroundColor: '#0A0A0A',
@@ -205,6 +249,16 @@ ipcMain.handle('browser:context-menu', (_event, params: { x: number; y: number; 
     template.push({ label: 'Copy Link Address', click: () => { clipboard.writeText(params.linkUrl!) } })
   }
   if (params.srcUrl) {
+    template.push({ label: 'Copy Image', click: async () => {
+      try {
+        const { net, nativeImage, clipboard: cb } = require('electron')
+        const res = await net.fetch(params.srcUrl!)
+        const buf = Buffer.from(await res.arrayBuffer())
+        const img = nativeImage.createFromBuffer(buf)
+        if (!img.isEmpty()) cb.writeImage(img)
+      } catch {}
+    }})
+    template.push({ label: 'Open Image in New Tab', click: () => { mainWindow?.webContents.send('browser:open-new-tab', params.srcUrl) } })
     template.push({ label: 'Copy Image Address', click: () => { clipboard.writeText(params.srcUrl!) } })
   }
   if (template.length > 0) template.push({ type: 'separator' })
@@ -629,12 +683,23 @@ ipcMain.handle('get-system-fonts', async (): Promise<string[]> => {
     let fonts: string[] = []
 
     if (platform === 'darwin') {
-      // macOS: use system_profiler to list all font full names
-      const { stdout } = await execFileAsync('system_profiler', ['SPFontsDataType'], { timeout: 15000 })
-      fonts = stdout.split('\n')
-        .filter((l: string) => l.includes('Full Name:'))
-        .map((l: string) => l.replace(/.*Full Name:\s*/, '').trim())
-        .filter(Boolean)
+      // macOS: scan font dirs and extract family names from filenames (fast, no system_profiler timeout)
+      const fontDirs = [
+        '/System/Library/Fonts',
+        '/Library/Fonts',
+        `${process.env.HOME}/Library/Fonts`,
+      ]
+      const { readdir } = await import('fs/promises')
+      for (const dir of fontDirs) {
+        try {
+          const files = await readdir(dir)
+          for (const f of files) {
+            if (/\.(ttf|otf|ttc)$/i.test(f)) {
+              fonts.push(f.replace(/\.(ttf|otf|ttc)$/i, '').replace(/[-_]/g, ' '))
+            }
+          }
+        } catch { /* dir may not exist */ }
+      }
     } else if (platform === 'linux') {
       const { stdout } = await execFileAsync('fc-list', [':', 'family'], { timeout: 10000 })
       fonts = stdout.split('\n').map((f: string) => f.split(',')[0].trim()).filter(Boolean)

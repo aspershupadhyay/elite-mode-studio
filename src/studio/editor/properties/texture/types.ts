@@ -58,3 +58,14 @@ export interface TexturePreset {
   category: 'grain' | 'noise' | 'paper' | 'grunge' | 'halftone' | 'fabric'
   defaultParams?: Partial<TextureParams>
 }
+
+/**
+ * Per-character texture range stored in `obj.eliteCharTextures` (JSON array).
+ * `start` is inclusive, `end` is exclusive — same convention as Fabric's
+ * selectionStart/selectionEnd.
+ */
+export interface EliteCharTextureRange {
+  start:  number
+  end:    number
+  params: TextureParams
+}

@@ -14,3 +14,17 @@ python-multipart
 playwright
 pillow
 opencv-python-headless
+httpx
+
+# Optional LLM providers — install whichever keys you have
+langchain-openai
+langchain-anthropic
+langchain-groq
+langchain-mistralai
+langchain-google-genai
+langchain-cohere
+langchain-ollama
+
+# Optional image providers
+openai
+replicate

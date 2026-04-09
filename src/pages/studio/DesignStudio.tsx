@@ -752,33 +752,9 @@ export default function DesignStudio({
         return
       }
 
-      const isActivePage = activePageRef.current === pageIdx
-
-      if (isActivePage) {
-        // Active page: if it already has its own JSON loaded, apply directly
-        // Otherwise import the JSON first so the canvas reflects this page
-        const fabricCanvas = handle.getCanvas()
-        if (fabricCanvas) {
-          if (!page.canvasJSON) {
-            // No per-page JSON yet — load template + re-apply text content first
-            await handle.importJSON(jsonToLoad)
-            await new Promise<void>(r => setTimeout(r, 200))
-            await applyGeneratedContentFromProfile(fabricCanvas, page.content, profile)
-          } else {
-            await applyGeneratedContentFromProfile(fabricCanvas, page.content, profile)
-          }
-          if (imgUrl) await injectGeneratedImage(fabricCanvas, imgUrl)
-          await new Promise<void>(r => setTimeout(r, 200))
-          const json  = handle.exportJSON?.() ?? null
-          const thumb = handle.getThumb?.()   ?? null
-          setPages(prev => prev.map((p, i) =>
-            i === pageIdx ? { ...p, status: 'rendered', rendered: true, canvasJSON: json, thumbnail: thumb } : p
-          ))
-        }
-        return
-      }
-
-      // Non-active page: import JSON, apply text + image, export back
+      // Always import the page's own JSON first.
+      // Non-active pages processed earlier in the loop overwrite the canvas state,
+      // so we can never rely on "the active page is already loaded" — import it fresh.
       await handle.importJSON(jsonToLoad)
       await new Promise<void>(r => setTimeout(r, 200))
 
@@ -796,9 +772,10 @@ export default function DesignStudio({
       ))
     }
 
-    // Process pages sequentially to avoid canvas thrashing
+    // Process pages sequentially to avoid canvas thrashing.
+    // Active page is sorted last so the canvas ends up showing it after the loop —
+    // no separate restore step needed (restore used stale pagesRef2 and undid injection).
     void (async () => {
-      // Sort: active page last so non-active pages render first, then restore active
       const sortedPages = [...imagePendingPages].sort((a, b) => {
         const ai = pagesRef2.current.findIndex(p => p.id === a.id)
         const bi = pagesRef2.current.findIndex(p => p.id === b.id)
@@ -810,13 +787,6 @@ export default function DesignStudio({
       for (const page of sortedPages) {
         const idx = pagesRef2.current.findIndex(p => p.id === page.id)
         if (idx >= 0) await rerenderPage(idx)
-      }
-      // Restore active page canvas if we touched non-active pages
-      const activeIdx = activePageRef.current
-      const activePg = pagesRef2.current[activeIdx]
-      const didTouchNonActive = sortedPages.some(p => pagesRef2.current.findIndex(pg => pg.id === p.id) !== activeIdx)
-      if (didTouchNonActive && activePg?.canvasJSON) {
-        await handle.importJSON(activePg.canvasJSON)
       }
     })()
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -900,11 +870,12 @@ export default function DesignStudio({
         />
       </div>
 
-      {/* Center — Toolbar + Canvas + Pages */}
+      {/* Center — Toolbar + Canvas + Pages; overflow:visible so tool dropdowns escape into right panel zone */}
       <div style={{
         position: 'absolute', top: 0, bottom: 0, left: leftW, right: RIGHT_W,
-        display: 'flex', flexDirection: 'column', overflow: 'hidden',
+        display: 'flex', flexDirection: 'column', overflow: 'visible',
         transition: 'left 160ms cubic-bezier(0.16,1,0.3,1)',
+        zIndex: 20,
       }}>
         <Toolbar
           canvasRef={canvasHandleRef}
@@ -918,8 +889,8 @@ export default function DesignStudio({
           pageCount={pages.length}
         />
 
-        {/* Canvas area */}
-        <div ref={studioRef} style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+        {/* Canvas area — overflow:visible so bottom toolbar dropdowns aren't clipped */}
+        <div ref={studioRef} style={{ flex: 1, position: 'relative', overflow: 'visible' }}>
           <DesignCanvas
             ref={canvasHandleRef}
             width={canvasSize.width}
@@ -974,8 +945,8 @@ export default function DesignStudio({
         />
       </div>
 
-      {/* Right — Properties */}
-      <div style={{ position: 'absolute', top: 0, bottom: 0, right: 0, width: RIGHT_W, overflow: 'hidden' }}>
+      {/* Right — Properties; z-index below center so tool dropdowns render above */}
+      <div style={{ position: 'absolute', top: 0, bottom: 0, right: 0, width: RIGHT_W, overflow: 'hidden', zIndex: 10 }}>
         <PropertiesPanel key={selectionVersion} selectedObject={selectedObject as import('fabric').FabricObject | null} canvas={fabricCanvas} canvasRef={canvasHandleRef} />
       </div>
 

@@ -36,6 +36,8 @@ electron_1.contextBridge.exposeInMainWorld('api', {
     },
     getImageGenConfig: () => electron_1.ipcRenderer.invoke('image-gen:get-config'),
     setImageGenUrl: (url) => electron_1.ipcRenderer.invoke('image-gen:set-url', url),
+    setupCheck: () => electron_1.ipcRenderer.invoke('setup:check'),
+    setupSaveConfig: (req) => electron_1.ipcRenderer.invoke('setup:save-config', req),
     // ── Read local file as base64 data URL (dev: file:// blocked by SOP) ───
     readLocalImage: (filePath) => electron_1.ipcRenderer.invoke('read-local-image', filePath),
     // ── Terminal logging from renderer ──────────────────────────────────────

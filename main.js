@@ -125,7 +125,50 @@ function waitForBackend(timeoutMs = 10000) {
         attempt();
     });
 }
+function buildAppMenu() {
+    const isMac = process.platform === 'darwin';
+    const template = [
+        ...(isMac ? [{ label: electron_1.app.name, submenu: [
+                    { role: 'about' },
+                    { type: 'separator' },
+                    { role: 'services' },
+                    { type: 'separator' },
+                    { role: 'hide' },
+                    { role: 'hideOthers' },
+                    { role: 'unhide' },
+                    { type: 'separator' },
+                    { role: 'quit' },
+                ] }] : []),
+        { label: 'Edit', submenu: [
+                { role: 'undo' },
+                { role: 'redo' },
+                { type: 'separator' },
+                { role: 'cut' },
+                { role: 'copy' },
+                { role: 'paste' },
+                { role: 'selectAll' },
+            ] },
+        { label: 'View', submenu: [
+                // Override CmdOrCtrl+R so it reloads the active browser tab, not the Electron window
+                { label: 'Reload Tab', accelerator: 'CmdOrCtrl+R',
+                    click: () => { mainWindow?.webContents.send('browser:reload'); } },
+                { type: 'separator' },
+                { role: 'toggleDevTools' },
+                { role: 'togglefullscreen' },
+            ] },
+        { label: 'Window', submenu: [
+                { role: 'minimize' },
+                { role: 'zoom' },
+                ...(isMac ? [
+                    { type: 'separator' },
+                    { role: 'front' },
+                ] : [{ role: 'close' }]),
+            ] },
+    ];
+    electron_1.Menu.setApplicationMenu(electron_1.Menu.buildFromTemplate(template));
+}
 function createWindow() {
+    buildAppMenu();
     mainWindow = new electron_1.BrowserWindow({
         width: 1440, height: 900, minWidth: 1100, minHeight: 700,
         titleBarStyle: 'hiddenInset', backgroundColor: '#0A0A0A',
@@ -151,6 +194,42 @@ function createWindow() {
 // ── IPC ────────────────────────────────────────────────────────────────────
 electron_1.ipcMain.handle('open-auth-popup', (_event, url) => { handlePopup(url); });
 electron_1.ipcMain.handle('open-external', (_event, url) => electron_1.shell.openExternal(url));
+// ── First-run setup ────────────────────────────────────────────────────────
+electron_1.ipcMain.handle('setup:check', async () => {
+    try {
+        const body = await new Promise((resolve, reject) => {
+            const req = http_1.default.get('http://127.0.0.1:8000/api/health', (res) => {
+                let data = '';
+                res.on('data', (chunk) => { data += chunk.toString(); });
+                res.on('end', () => resolve(data));
+            });
+            req.on('error', reject);
+            req.setTimeout(3000, () => { req.destroy(); reject(new Error('timeout')); });
+        });
+        const json = JSON.parse(body);
+        const missing = json.missing_keys ?? [];
+        return { configured: missing.length === 0, missingKeys: missing };
+    }
+    catch {
+        return { configured: false, missingKeys: ['NVIDIA_API_KEY', 'TAVILY_API_KEY'] };
+    }
+});
+electron_1.ipcMain.handle('setup:save-config', (_event, req) => {
+    try {
+        const configDir = path_1.default.join(electron_1.app.getPath('userData'), 'backend');
+        fs_1.default.mkdirSync(configDir, { recursive: true });
+        const content = [
+            `NVIDIA_API_KEY=${req.nvidiaKey.trim()}`,
+            `TAVILY_API_KEY=${req.tavilyKey.trim()}`,
+            '',
+        ].join('\n');
+        fs_1.default.writeFileSync(path_1.default.join(configDir, '.env'), content, 'utf8');
+        return { ok: true };
+    }
+    catch (err) {
+        return { ok: false, error: String(err) };
+    }
+});
 electron_1.ipcMain.handle('clear-browser-data', async () => {
     const { session: electronSession } = await Promise.resolve().then(() => __importStar(require('electron')));
     const ses = electronSession.fromPartition('persist:ai-browser');
@@ -190,6 +269,18 @@ electron_1.ipcMain.handle('browser:context-menu', (_event, params) => {
         template.push({ label: 'Copy Link Address', click: () => { clipboard.writeText(params.linkUrl); } });
     }
     if (params.srcUrl) {
+        template.push({ label: 'Copy Image', click: async () => {
+                try {
+                    const { net, nativeImage, clipboard: cb } = require('electron');
+                    const res = await net.fetch(params.srcUrl);
+                    const buf = Buffer.from(await res.arrayBuffer());
+                    const img = nativeImage.createFromBuffer(buf);
+                    if (!img.isEmpty())
+                        cb.writeImage(img);
+                }
+                catch { }
+            } });
+        template.push({ label: 'Open Image in New Tab', click: () => { mainWindow?.webContents.send('browser:open-new-tab', params.srcUrl); } });
         template.push({ label: 'Copy Image Address', click: () => { clipboard.writeText(params.srcUrl); } });
     }
     if (template.length > 0)
@@ -652,12 +743,24 @@ electron_1.ipcMain.handle('get-system-fonts', async () => {
         const platform = process.platform;
         let fonts = [];
         if (platform === 'darwin') {
-            // macOS: use system_profiler to list all font full names
-            const { stdout } = await execFileAsync('system_profiler', ['SPFontsDataType'], { timeout: 15000 });
-            fonts = stdout.split('\n')
-                .filter((l) => l.includes('Full Name:'))
-                .map((l) => l.replace(/.*Full Name:\s*/, '').trim())
-                .filter(Boolean);
+            // macOS: scan font dirs and extract family names from filenames (fast, no system_profiler timeout)
+            const fontDirs = [
+                '/System/Library/Fonts',
+                '/Library/Fonts',
+                `${process.env.HOME}/Library/Fonts`,
+            ];
+            const { readdir } = await Promise.resolve().then(() => __importStar(require('fs/promises')));
+            for (const dir of fontDirs) {
+                try {
+                    const files = await readdir(dir);
+                    for (const f of files) {
+                        if (/\.(ttf|otf|ttc)$/i.test(f)) {
+                            fonts.push(f.replace(/\.(ttf|otf|ttc)$/i, '').replace(/[-_]/g, ' '));
+                        }
+                    }
+                }
+                catch { /* dir may not exist */ }
+            }
         }
         else if (platform === 'linux') {
             const { stdout } = await execFileAsync('fc-list', [':', 'family'], { timeout: 10000 });

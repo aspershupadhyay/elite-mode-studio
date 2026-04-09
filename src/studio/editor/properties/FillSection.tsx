@@ -4,6 +4,7 @@ import '@/types/fabric-custom'
 import { DropletIcon } from '../../icons/Icons'
 import { TexturePanel, applyTexture, removeTexture, parseTexture, supportsTextureFill } from './texture'
 import type { TextureParams } from './texture'
+import { useBrandKit } from './BrandKitPanel'
 
 const COLOR_PALETTE = [
   '#FFFFFF','#EAEAEA','#CCCCCC','#999999','#666666','#444444','#222222','#111111',
@@ -53,6 +54,7 @@ export function FillSection({
   object, canvas, inSelectionMode, selFill, selMixedFill,
   currentFill, hasStringFill, onApplyInline, onUpdate, onPreview, onClearPreview,
 }: FillSectionProps): JSX.Element {
+  const brand = useBrandKit()
   const canTexture = supportsTextureFill(object)
   const [fillMode, setFillMode] = useState<FillMode>(() =>
     object.eliteTextureFill ? 'texture' : 'solid'
@@ -136,6 +138,26 @@ export function FillSection({
                 className="px-2 py-1 text-[10px] text-warm-faint bg-elite-800 border border-elite-600/40 rounded hover:border-accent/40 cursor-pointer" title="No fill">∅</button>
             )}
           </div>
+          {/* Brand colors row — appears above main palette when a brand is active */}
+          {brand && brand.colors.length > 0 && (
+            <div className="mb-2">
+              <div className="flex items-center gap-1 mb-1">
+                <span className="text-[8px] text-accent/60 uppercase tracking-widest font-semibold">Brand</span>
+              </div>
+              <div className="flex gap-1 flex-wrap">
+                {brand.colors.map((c, i) => (
+                  <button key={i} title={c}
+                    style={{ background: c }}
+                    onClick={() => setFill(c)}
+                    onMouseEnter={() => { if (!inSelectionMode) onPreview('fill', c) }}
+                    onMouseLeave={() => { if (!inSelectionMode) onClearPreview('fill') }}
+                    className={`w-5 h-5 rounded border cursor-pointer transition-transform hover:scale-110 active:scale-95
+                      ${(dispFill || '').toLowerCase() === c.toLowerCase() ? 'border-accent ring-1 ring-accent/50 scale-110' : 'border-white/10'}`}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
           <div className="grid grid-cols-8 gap-1">
             {COLOR_PALETTE.map((c, i) => (
               <ColorSwatch key={i} color={c}
@@ -188,35 +210,72 @@ export function StrokeSection({
   )
 }
 
-// ── Gradient sub-section (for eliteType='gradient' overlay objects) ───────────
-import * as fabric from 'fabric'
+// ── Gradient overlay config (for eliteType='gradient' objects) ────────────────
+
+const GRAD_DIRS = [
+  { key: 'tb',   label: '↓', title: 'Top to Bottom'       },
+  { key: 'bt',   label: '↑', title: 'Bottom to Top'       },
+  { key: 'lr',   label: '→', title: 'Left to Right'       },
+  { key: 'rl',   label: '←', title: 'Right to Left'       },
+  { key: 'tlbr', label: '↘', title: 'Top-Left to Bottom-Right' },
+  { key: 'trbl', label: '↙', title: 'Top-Right to Bottom-Left' },
+  { key: 'bltr', label: '↗', title: 'Bottom-Left to Top-Right' },
+  { key: 'brtl', label: '↖', title: 'Bottom-Right to Top-Left' },
+]
 
 export function GradientSection({
-  gradTopColor, gradBottomColor, gradOpacity, onUpdateGradient, onUpdateOpacity,
+  gradColor, gradDir, gradStrength, gradOpacity,
+  onUpdateGradient, onUpdateOpacity,
 }: {
-  gradTopColor: string; gradBottomColor: string; gradOpacity: number
-  onUpdateGradient: (top: string, bot: string) => void; onUpdateOpacity: (v: number) => void
+  gradColor: string; gradDir: string; gradStrength: number; gradOpacity: number
+  onUpdateGradient: (color: string, dir: string, strength: number) => void
+  onUpdateOpacity: (v: number) => void
 }): JSX.Element {
   return (
-    <Section title="Gradient Colors">
-      <div className="space-y-2">
-        {([[gradTopColor,'Top'],[gradBottomColor,'Bottom']] as [string, string][]).map(([color, label]) => (
-          <div key={label} className="flex items-center gap-2">
-            <span className="text-[10px] text-warm-faint w-10">{label}</span>
-            <input type="color" value="#111111" onChange={e => {
-              const v = e.target.value
-              const r = parseInt(v.slice(1,3),16), g = parseInt(v.slice(3,5),16), b = parseInt(v.slice(5,7),16)
-              const rgba = `rgba(${r},${g},${b},${label==='Top'?0:1})`
-              if (label === 'Top') onUpdateGradient(rgba, gradBottomColor)
-              else onUpdateGradient(gradTopColor, rgba)
-            }} className="w-6 h-6 rounded cursor-pointer border border-elite-600/50 bg-transparent [&::-webkit-color-swatch]:rounded [&::-webkit-color-swatch-wrapper]:p-0.5"/>
-            <span className="text-[10px] text-warm-faint flex-1 font-mono">{color}</span>
+    <Section title="Gradient Overlay">
+      <div className="space-y-3">
+        {/* Color */}
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] text-warm-faint w-12 shrink-0">Color</span>
+          <input type="color" value={gradColor}
+            onChange={e => onUpdateGradient(e.target.value, gradDir, gradStrength)}
+            className="w-6 h-6 rounded cursor-pointer border border-elite-600/50 bg-transparent [&::-webkit-color-swatch]:rounded [&::-webkit-color-swatch-wrapper]:p-0.5 shrink-0"/>
+          <span className="text-[10px] text-warm-faint font-mono flex-1">{gradColor.toUpperCase()}</span>
+        </div>
+
+        {/* Direction */}
+        <div>
+          <span className="text-[10px] text-warm-faint block mb-1.5">Direction</span>
+          <div className="grid grid-cols-4 gap-1">
+            {GRAD_DIRS.map(d => (
+              <button key={d.key} title={d.title}
+                onClick={() => onUpdateGradient(gradColor, d.key, gradStrength)}
+                className={`py-1.5 text-[13px] rounded border cursor-pointer transition-colors ${
+                  gradDir === d.key
+                    ? 'bg-accent/20 text-accent border-accent/40'
+                    : 'bg-elite-800 text-warm-faint border-elite-600/30 hover:border-warm-faint/40 hover:text-warm'
+                }`}>
+                {d.label}
+              </button>
+            ))}
           </div>
-        ))}
-        <div className="flex items-center gap-2 pt-1">
-          <span className="text-[10px] text-warm-faint w-10">Fade</span>
+        </div>
+
+        {/* Strength (dark end opacity) */}
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] text-warm-faint w-12 shrink-0">Strength</span>
+          <input type="range" min={0} max={1} step={0.05} value={gradStrength}
+            onChange={e => onUpdateGradient(gradColor, gradDir, parseFloat(e.target.value))}
+            className="flex-1 accent-accent h-1 cursor-pointer"/>
+          <span className="text-[10px] text-warm-faint font-mono w-8 text-right">{Math.round(gradStrength * 100)}%</span>
+        </div>
+
+        {/* Opacity */}
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] text-warm-faint w-12 shrink-0">Opacity</span>
           <input type="range" min={0} max={1} step={0.05} value={gradOpacity}
-            onChange={e => onUpdateOpacity(parseFloat(e.target.value))} className="flex-1 accent-accent h-1"/>
+            onChange={e => onUpdateOpacity(parseFloat(e.target.value))}
+            className="flex-1 accent-accent h-1 cursor-pointer"/>
           <span className="text-[10px] text-warm-faint font-mono w-8 text-right">{Math.round(gradOpacity * 100)}%</span>
         </div>
       </div>

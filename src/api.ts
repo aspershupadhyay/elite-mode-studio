@@ -14,6 +14,7 @@ export async function apiFetch<T>(
   try {
     const res = await fetch(`${API}${path}`, {
       headers: { 'Content-Type': 'application/json' },
+      cache: 'no-store',
       ...options,
     })
     const json = await res.json().catch(() => ({})) as Record<string, unknown>

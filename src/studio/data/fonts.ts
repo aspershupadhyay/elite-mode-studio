@@ -105,6 +105,41 @@ export const FONT_CATEGORIES: string[] = [
  * Fonts that have native italic variants (metadata — used by callers that
  * need to know whether real italic glyphs are available).
  */
+/**
+ * Fonts loaded via @fontsource-variable register as "Family Variable" in CSS,
+ * NOT as "Family". Fabric.js must use the exact CSS family name or it falls back.
+ */
+export const VARIABLE_FONT_FAMILIES = new Set([
+  // Sans Serif
+  'Inter', 'Outfit', 'Montserrat', 'Open Sans', 'Nunito', 'Raleway', 'Work Sans',
+  'DM Sans', 'Manrope', 'Plus Jakarta Sans', 'Space Grotesk', 'Rubik', 'Urbanist',
+  'Lexend', 'Figtree', 'Instrument Sans', 'Epilogue',
+  // Display
+  'Oswald', 'Orbitron', 'Big Shoulders Display',
+  // Serif
+  'Playfair Display', 'Lora', 'Fraunces', 'Crimson Pro', 'Bitter',
+  // Monospace
+  'JetBrains Mono', 'Fira Code', 'Source Code Pro', 'Inconsolata',
+  // Handwriting
+  'Caveat', 'Dancing Script',
+])
+
+/**
+ * Returns the CSS font-family name as registered in @font-face rules.
+ * Variable fonts need the " Variable" suffix to match the registered name.
+ */
+export function getCanvasFontFamily(displayName: string): string {
+  const clean = displayName.replace(/ Variable$/i, '').replace(/, sans-serif$/i, '').trim()
+  return VARIABLE_FONT_FAMILIES.has(clean) ? `${clean} Variable` : clean
+}
+
+/**
+ * Strips " Variable" and ", sans-serif" suffixes for display in UI.
+ */
+export function getDisplayFontFamily(cssFamily: string): string {
+  return cssFamily.replace(/ Variable$/i, '').replace(/, sans-serif$/i, '').trim()
+}
+
 export const ITALIC_SUPPORTED = new Set([
   'Inter', 'Outfit', 'Poppins', 'Montserrat', 'Roboto', 'Open Sans', 'Lato',
   'Nunito', 'Raleway', 'Work Sans', 'DM Sans', 'Manrope', 'Plus Jakarta Sans',

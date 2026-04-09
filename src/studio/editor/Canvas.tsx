@@ -38,6 +38,7 @@ import {
   loadFileIntoFrame, findFrameAtPoint, highlightFrame, clearFrameHighlight,
 } from '../canvas/frames'
 import { findSnaps, applySnap, buildResizeGuides } from '../canvas/snapping'
+import { registerResizeCursor } from '../canvas/resize-zone'
 import { autoFormatCanvas } from '../canvas/autoFormat'
 import { applyStylePatch } from '../text/spanOps'
 import { pushSelectionToStore, scheduleSelectionUpdate } from '../text/SelectionManager'
@@ -332,13 +333,13 @@ const DesignCanvas = forwardRef<CanvasHandle, CanvasProps>((
 
   const addGradientOverlay = useCallback((): void => {
     const c = fabricRef.current; if (!c) return
-    const gH = Math.round(height * 0.12)
-    const rect = new fabric.Rect({ left: 0, top: Math.round(height * 0.55) - gH, width, height: gH, strokeWidth: 0 })
+    const rect = new fabric.Rect({ left: 0, top: 0, width, height, strokeWidth: 0 })
+    rect.eliteType = 'gradient'; rect.eliteLabel = 'Gradient Overlay'
+    rect.eliteGradColor = '#111111'; rect.eliteGradDir = 'tb'; rect.eliteGradStrength = 1
     rect.set('fill', new fabric.Gradient({
-      type: 'linear', coords: { x1: 0, y1: 0, x2: 0, y2: gH },
+      type: 'linear', coords: { x1: 0, y1: 0, x2: 0, y2: height },
       colorStops: [{ offset: 0, color: 'rgba(17,17,17,0)' }, { offset: 1, color: 'rgba(17,17,17,1)' }],
     }))
-    rect.eliteType = 'gradient'; rect.eliteLabel = 'Gradient Overlay'
     c.add(rect); c.setActiveObject(rect); c.renderAll(); saveHistory()
   }, [width, height, saveHistory])
 
@@ -698,9 +699,6 @@ const DesignCanvas = forwardRef<CanvasHandle, CanvasProps>((
     updateAccentColor: (newColor: string): void => {
       accentRef.current = newColor
       const c = fabricRef.current; if (!c) return
-      fabric.FabricObject.prototype.set({
-        cornerColor: newColor, cornerStrokeColor: newColor, borderColor: newColor + '99',
-      })
       c.getObjects().forEach(obj => {
         if (obj.eliteType === 'tag') { obj.set('fill', newColor); (obj as FabricObject & { dirty?: boolean }).dirty = true }
       })
@@ -766,11 +764,123 @@ const DesignCanvas = forwardRef<CanvasHandle, CanvasProps>((
 
     const initAccent = getAccentColor()
     accentRef.current = initAccent
-    fabric.FabricObject.prototype.set({
-      transparentCorners: false, cornerColor: initAccent, cornerStrokeColor: initAccent,
-      cornerSize: 8, cornerStyle: 'circle', borderColor: initAccent + '99',
-      borderScaleFactor: 1.5, padding: 6,
+
+    // ── Swift-style selection handles ──────────────────────────────────────
+    const ACCENT   = '#C96A42'
+    const CORNER_R = 11   // corner circle radius
+    const PILL_L   = 16   // pill long-axis half
+    const PILL_S   = 9    // pill short-axis half (must be > border line half-width)
+    const SW       = 1.5  // handle stroke width
+
+    // Corner renderer — bold filled circle
+    const renderCornerHandle = (
+      ctx: CanvasRenderingContext2D,
+      left: number, top: number,
+    ): void => {
+      ctx.save()
+      ctx.shadowColor = 'rgba(0,0,0,0.30)'
+      ctx.shadowBlur  = 6
+      ctx.shadowOffsetY = 2
+      ctx.beginPath()
+      ctx.arc(left, top, CORNER_R, 0, Math.PI * 2)
+      ctx.fillStyle = '#FFFFFF'
+      ctx.fill()
+      ctx.shadowColor = 'transparent'
+      ctx.strokeStyle = ACCENT
+      ctx.lineWidth   = SW
+      ctx.stroke()
+      ctx.restore()
+    }
+
+    // Mid-edge renderer — bold pill / capsule
+    const renderEdgeHandle = (
+      ctx: CanvasRenderingContext2D,
+      left: number, top: number,
+      _style: unknown,
+      _obj: unknown,
+      key: string,
+    ): void => {
+      const isHoriz = key === 'mt' || key === 'mb'
+      const hw = isHoriz ? PILL_L : PILL_S
+      const hh = isHoriz ? PILL_S : PILL_L
+      const r  = Math.min(hw, hh)
+      ctx.save()
+      ctx.shadowColor = 'rgba(0,0,0,0.22)'
+      ctx.shadowBlur  = 5
+      ctx.shadowOffsetY = 2
+      ctx.beginPath()
+      ctx.roundRect(left - hw, top - hh, hw * 2, hh * 2, r)
+      ctx.fillStyle = '#FFFFFF'
+      ctx.fill()
+      ctx.shadowColor = 'transparent'
+      ctx.strokeStyle = ACCENT
+      ctx.lineWidth   = SW
+      ctx.stroke()
+      ctx.restore()
+    }
+
+    // Apply our renderers + hit areas to a controls map
+    const applyHandleRenderers = (controls: Record<string, fabric.Control>): void => {
+      ;(['tl', 'tr', 'bl', 'br'] as const).forEach(k => {
+        if (!controls[k]) return
+        controls[k].render = renderCornerHandle
+        controls[k].sizeX  = (CORNER_R + 6) * 2
+        controls[k].sizeY  = (CORNER_R + 6) * 2
+      })
+      ;(['mt', 'mb', 'ml', 'mr'] as const).forEach(k => {
+        if (!controls[k]) return
+        const key = k
+        controls[k].render = (ctx, left, top, style, obj2) => renderEdgeHandle(ctx, left, top, style, obj2, key)
+        controls[k].sizeX  = (k === 'ml' || k === 'mr') ? (PILL_S + 6) * 2 : (PILL_L + 6) * 2
+        controls[k].sizeY  = (k === 'mt' || k === 'mb') ? (PILL_S + 6) * 2 : (PILL_L + 6) * 2
+      })
+      // Hide rotation handle (no ugly connector line)
+      if (controls['mtr']) controls['mtr'].visible = false
+    }
+
+    // Patch controls directly on a single object
+    const patchObjControls = (obj: fabric.FabricObject): void => {
+      const controls = obj.controls as Record<string, fabric.Control>
+      if (!controls) return
+      applyHandleRenderers(controls)
+    }
+
+    // Override prototype.createControls so every new instance gets our renderers
+    const proto = fabric.FabricObject.prototype as fabric.FabricObject & { createControls?: () => Record<string, fabric.Control> }
+    if (typeof proto.createControls === 'function') {
+      const _orig = proto.createControls
+      proto.createControls = function (this: fabric.FabricObject) {
+        const controls = _orig.call(this) as Record<string, fabric.Control>
+        applyHandleRenderers(controls)
+        return controls
+      }
+    }
+
+    // Patch objects already on canvas + any added later
+    canvas.getObjects().forEach(o => { patchObjControls(o) })
+    canvas.on('object:added', ({ target }) => {
+      patchObjControls(target as fabric.FabricObject)
     })
+
+    // Visual defaults via ownDefaults (correct v6 API — prototype.set() is ignored)
+    Object.assign(fabric.FabricObject.ownDefaults, {
+      transparentCorners: false,
+      cornerColor:        '#FFFFFF',
+      cornerStrokeColor:  ACCENT,
+      cornerSize:         CORNER_R * 2,
+      cornerStyle:        'rect',
+      borderColor:        ACCENT,
+      borderScaleFactor:  6,
+      padding:            0,
+      snapAngle:          15,
+      hasBorders:              true,
+      hasControls:             true,
+      borderOpacityWhenMoving: 1,
+    })
+    // editingBorderColor lives on IText.ownDefaults, not FabricObject — patch it directly
+    if (fabric.IText?.ownDefaults) {
+      (fabric.IText.ownDefaults as Record<string, unknown>).editingBorderColor = ACCENT
+    }
 
     // Selection events
     canvas.on('selection:created', (e: { selected?: FabricObject[] }) => onSelectionChange(e.selected?.[0] ?? null))
@@ -819,26 +929,21 @@ const DesignCanvas = forwardRef<CanvasHandle, CanvasProps>((
       clip.setCoords()
     }
 
+    // Keep handles fully visible during drag/scale/rotate
+    const keepHandlesVisible = (e: { target?: FabricObject }): void => {
+      const t = e.target
+      if (!t) return
+      t.hasBorders = true
+      t.hasControls = true
+      t.setCoords()
+    }
+    canvas.on('object:moving',   keepHandlesVisible)
+    canvas.on('object:scaling',  keepHandlesVisible)
+    canvas.on('object:rotating', keepHandlesVisible)
+
     canvas.on('object:moving',   (e: { target?: FabricObject }) => syncFrameImageLayer(e.target ?? null))
     canvas.on('object:scaling',  (e: { target?: FabricObject }) => syncFrameImageLayer(e.target ?? null))
     canvas.on('object:rotating', (e: { target?: FabricObject }) => syncFrameImageLayer(e.target ?? null))
-
-    // Canvas-image → frame highlight
-    canvas.on('object:moving', (e: { target?: FabricObject }) => {
-      const obj = e.target
-      if (obj?.eliteType !== 'image') {
-        if (canvasImgDragFrameRef.current) { clearFrameHighlight(canvasImgDragFrameRef.current); canvasImgDragFrameRef.current = null; canvas.renderAll() }
-        return
-      }
-      const center = obj.getCenterPoint()
-      const frame = findFrameAtPoint(canvas, center.x, center.y)
-      if (frame !== canvasImgDragFrameRef.current) {
-        if (canvasImgDragFrameRef.current) clearFrameHighlight(canvasImgDragFrameRef.current)
-        if (frame) highlightFrame(frame, accentRef.current)
-        canvasImgDragFrameRef.current = frame
-        canvas.renderAll()
-      }
-    })
 
     // Snap guides
     canvas.on('object:moving', (e: { target?: FabricObject }) => {
@@ -861,22 +966,6 @@ const DesignCanvas = forwardRef<CanvasHandle, CanvasProps>((
 
     canvas.on('mouse:up', () => {
       onGuidesChange?.(null)
-      const targetFrame = canvasImgDragFrameRef.current
-      if (targetFrame) {
-        clearFrameHighlight(targetFrame); canvasImgDragFrameRef.current = null
-        const active = canvas.getActiveObject()
-        if (active?.eliteType === 'image') {
-          const patternSource = (active.fill as { source?: HTMLImageElement } | undefined)?.source
-          const imgEl = patternSource instanceof HTMLImageElement
-            ? patternSource
-            : (active as FabricObject & { getElement?: () => HTMLImageElement }).getElement?.() ?? null
-          if (imgEl) {
-            applyImageToFrame(targetFrame, imgEl); canvas.remove(active as FabricObject)
-            canvas.setActiveObject(targetFrame); canvas.renderAll(); saveHistory()
-          }
-        }
-        canvas.renderAll()
-      }
     })
 
     canvas.on('mouse:down', (opt) => {
@@ -958,6 +1047,44 @@ const DesignCanvas = forwardRef<CanvasHandle, CanvasProps>((
       ;(obj as FabricObject & { _cmdACleanup?: () => void } | null)?._cmdACleanup?.()
     })
 
+    // Hover outline — accent border drawn on lower canvas for unselected objects
+    let hoveredObj: FabricObject | null = null
+
+    canvas.on('mouse:move', (opt: { target?: FabricObject }) => {
+      const target = opt.target
+      const active = canvas.getActiveObjects()
+      const next = (target && target.selectable && target.evented && !active.includes(target as FabricObject))
+        ? target as FabricObject : null
+      if (hoveredObj !== next) {
+        hoveredObj = next
+        canvas.requestRenderAll()
+      }
+    })
+
+    canvas.on('selection:created', () => { hoveredObj = null })
+    canvas.on('selection:updated', () => { hoveredObj = null })
+    canvas.on('selection:cleared', () => { hoveredObj = null })
+
+    canvas.on('after:render', (e: { ctx: CanvasRenderingContext2D }) => {
+      if (!hoveredObj) return
+      const lowerCtx = canvas.getContext()
+      if (e.ctx !== lowerCtx) return
+      if (canvas.getActiveObjects().includes(hoveredObj)) { hoveredObj = null; return }
+      const HOVER_PAD = 14
+      const bound = hoveredObj.getBoundingRect()
+      e.ctx.save()
+      e.ctx.strokeStyle = ACCENT
+      e.ctx.lineWidth = 6
+      e.ctx.setLineDash([])
+      e.ctx.strokeRect(
+        bound.left   - HOVER_PAD,
+        bound.top    - HOVER_PAD,
+        bound.width  + HOVER_PAD * 2,
+        bound.height + HOVER_PAD * 2,
+      )
+      e.ctx.restore()
+    })
+
     // Drag/drop from OS
     const canvasEl = canvasRef.current!
     const convertScreen = (sx: number, sy: number): { x: number; y: number } => {
@@ -997,6 +1124,8 @@ const DesignCanvas = forwardRef<CanvasHandle, CanvasProps>((
     canvasEl.addEventListener('drop',      handleDrop)
 
     fabricRef.current = canvas
+    const cleanupResizeCursor = registerResizeCursor(canvas)
+
     // Start blank — DesignStudio restores session or user loads a template explicitly.
     // resetToDefault() still works for explicit "load defaults" actions.
     canvas.renderAll()
@@ -1004,6 +1133,7 @@ const DesignCanvas = forwardRef<CanvasHandle, CanvasProps>((
     setTimeout(() => calculateZoom(), 50)
 
     return (): void => {
+      cleanupResizeCursor()
       canvas.dispose(); fabricRef.current = null
       canvasEl.removeEventListener('dragover',  handleDragOver)
       canvasEl.removeEventListener('dragleave', handleDragLeave)
@@ -1163,20 +1293,17 @@ const DesignCanvas = forwardRef<CanvasHandle, CanvasProps>((
       style={{ background: 'var(--bg)', touchAction: 'none' }}
     >
       {/* Dot grid — scales with zoom, fades at extremes */}
-      <div className="absolute inset-0 pointer-events-none"
+      <div className="absolute inset-0 pointer-events-none studio-dot-grid"
            style={{
-             backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.25) 0.8px, transparent 0.8px)',
              backgroundSize: `${32 * zoom}px ${32 * zoom}px`,
              backgroundPosition: `${pan.x}px ${pan.y}px`,
              opacity: Math.max(0.08, Math.min(0.4, zoom * 0.3)),
            }}/>
       <div className="absolute inset-0 flex items-center justify-center">
-        <div style={{
+        <div className="studio-canvas-card" style={{
           transform: `translate(${pan.x}px,${pan.y}px) scale(${zoom})`,
           transformOrigin: 'center center',
           transition: isPanning.current ? 'none' : 'transform 0.15s ease-out',
-          boxShadow: '0 0 0 1px rgba(255,255,255,0.04), 0 8px 40px rgba(0,0,0,0.5), 0 2px 12px rgba(0,0,0,0.3)',
-          borderRadius: '4px',
         }}>
           <canvas ref={canvasRef}/>
         </div>

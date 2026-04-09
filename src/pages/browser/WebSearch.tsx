@@ -16,7 +16,7 @@ import {
 
 import type { Tab, PendingPrompt, ImageGenQueueJob, AiBrowserHandle } from './types'
 import { makeTab, normalise } from './helpers'
-import { buildInjectorScript, IMAGE_WATCHER_JS, CHATGPT_STATUS_JS, buildMouseMoveScript } from './scripts'
+import { buildInjectorScript, IMAGE_WATCHER_JS, CHATGPT_STATUS_JS, SNAPSHOT_EXISTING_IMAGES_JS, buildMouseMoveScript } from './scripts'
 import TabView from './TabView'
 import BrowserSettings from './BrowserSettings'
 import StatusPills from './StatusPills'
@@ -148,6 +148,38 @@ const AiBrowser = forwardRef<AiBrowserHandle, AiBrowserProps>(function AiBrowser
   const updateTab = useCallback((id: string, patch: Partial<Tab>): void => {
     setTabs(prev => prev.map(t => t.id === id ? { ...t, ...patch } : t))
   }, [])
+
+  // ── Keyboard shortcuts ────────────────────────────────────────────────────
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent): void => {
+      const isMod = e.ctrlKey || e.metaKey
+      if (!isMod) return
+      if (e.key === 't') {
+        e.preventDefault()
+        addTab()
+      } else if (e.key === 'w') {
+        e.preventDefault()
+        wvMap.current.delete(activeId)
+        setTabs(prev => {
+          if (prev.length === 1) {
+            const fresh = makeTab()
+            setActiveId(fresh.id)
+            return [fresh]
+          }
+          const idx  = prev.findIndex(t => t.id === activeId)
+          const next = prev.filter(t => t.id !== activeId)
+          setActiveId(next[Math.max(0, idx - 1)].id)
+          return next
+        })
+      } else if (e.key === 'r') {
+        e.preventDefault()
+        wvMap.current.get(activeId)?.reload()
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [activeId, addTab]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const navigateTab = useCallback((id: string, rawUrl: string): void => {
     const u = normalise(rawUrl)
@@ -324,6 +356,10 @@ const AiBrowser = forwardRef<AiBrowserHandle, AiBrowserProps>(function AiBrowser
       } catch {}
 
       activePostRef.current = job.postId
+
+      // Snapshot which images are already on the page so the status script
+      // only accepts NEW images (prevents previous job's image being re-used).
+      try { await wv.executeJavaScript(SNAPSHOT_EXISTING_IMAGES_JS) } catch {}
 
       // Inject prompt
       setPrompts(prev => prev.map(p => p.postId === job.postId ? { ...p, status: 'injecting' as const } : p))
@@ -502,11 +538,11 @@ const AiBrowser = forwardRef<AiBrowserHandle, AiBrowserProps>(function AiBrowser
       {/* ══ TAB STRIP ══════════════════════════════════════════════════════ */}
       <div style={{
         display: 'flex', alignItems: 'stretch',
-        padding: '6px 6px 0', gap: 1,
+        padding: '5px 8px 0', gap: 2,
         background: 'var(--surface-1)',
         borderBottom: '1px solid var(--border-subtle)',
         flexShrink: 0, overflowX: 'auto', scrollbarWidth: 'none',
-        minHeight: 38,
+        minHeight: 40,
       }}>
         {tabs.map(tab => {
           const isActive  = tab.id === activeId
@@ -523,18 +559,30 @@ const AiBrowser = forwardRef<AiBrowserHandle, AiBrowserProps>(function AiBrowser
               onClick={() => setActiveId(tab.id)}
               style={{
                 display: 'flex', alignItems: 'center', gap: 6,
-                padding: '0 10px', minWidth: 90, maxWidth: 200, flexShrink: 0,
-                borderRadius: '8px 8px 0 0',
-                background: isActive ? 'var(--surface-2)' : isOver ? 'rgba(255,255,255,0.05)' : 'transparent',
+                padding: '0 10px 0 12px', minWidth: 100, maxWidth: 210, flexShrink: 0,
+                borderRadius: '9px 9px 0 0', position: 'relative',
+                background: isActive
+                  ? 'var(--surface-2)'
+                  : isOver
+                    ? 'rgba(255,255,255,0.04)'
+                    : 'transparent',
                 border: isActive ? '1px solid var(--border-default)' : '1px solid transparent',
                 borderBottom: isActive ? '1px solid var(--surface-2)' : '1px solid transparent',
                 marginBottom: isActive ? -1 : 0,
                 cursor: 'pointer', userSelect: 'none',
-                opacity: isDragged ? 0.4 : 1,
+                opacity: isDragged ? 0.35 : 1,
                 outline: isOver && !isDragged ? '1px solid var(--accent-border)' : 'none',
-                transition: 'background 0.1s, opacity 0.1s',
+                transition: 'background 0.12s, opacity 0.12s',
               }}
             >
+              {/* Active accent underline */}
+              {isActive && (
+                <div style={{
+                  position: 'absolute', bottom: 0, left: '18%', right: '18%', height: 2,
+                  background: 'linear-gradient(90deg,transparent,var(--accent),transparent)',
+                  borderRadius: 1, opacity: 0.7,
+                }}/>
+              )}
               {tab.loading
                 ? <Loader size={11} style={{ color: 'var(--accent)', flexShrink: 0, animation: 'spin 0.8s linear infinite' }} />
                 : tab.favicon
@@ -551,14 +599,27 @@ const AiBrowser = forwardRef<AiBrowserHandle, AiBrowserProps>(function AiBrowser
               </span>
               <button
                 onClick={e => closeTab(tab.id, e)}
+                title="Close tab (Ctrl+W)"
                 style={{
                   background: 'none', border: 'none', padding: '2px 3px',
                   cursor: 'pointer', color: 'var(--text-tertiary)',
                   display: 'flex', alignItems: 'center', flexShrink: 0,
-                  borderRadius: 4, opacity: 0, transition: 'opacity 0.1s, background 0.1s',
+                  borderRadius: 4,
+                  opacity: isActive ? 0.45 : 0,
+                  transition: 'opacity 0.12s, background 0.12s, color 0.12s',
                 }}
-                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.opacity = '1'; (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.08)' }}
-                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.opacity = '0'; (e.currentTarget as HTMLButtonElement).style.background = 'transparent' }}
+                onMouseEnter={e => {
+                  const b = e.currentTarget as HTMLButtonElement
+                  b.style.opacity = '1'
+                  b.style.background = 'rgba(255,255,255,0.1)'
+                  b.style.color = 'var(--text-primary)'
+                }}
+                onMouseLeave={e => {
+                  const b = e.currentTarget as HTMLButtonElement
+                  b.style.opacity = isActive ? '0.45' : '0'
+                  b.style.background = 'transparent'
+                  b.style.color = 'var(--text-tertiary)'
+                }}
                 onMouseDown={e => e.stopPropagation()}
               >
                 <X size={10} />
@@ -568,16 +629,24 @@ const AiBrowser = forwardRef<AiBrowserHandle, AiBrowserProps>(function AiBrowser
         })}
         <button
           onClick={() => addTab()}
-          title="New tab"
+          title="New tab (Ctrl+T)"
           style={{
             background: 'none', border: 'none', cursor: 'pointer',
-            color: 'var(--text-tertiary)', padding: '0 10px',
+            color: 'var(--text-tertiary)', padding: '0 11px',
             display: 'flex', alignItems: 'center',
-            borderRadius: '7px 7px 0 0', flexShrink: 0,
-            transition: 'color 0.1s, background 0.1s',
+            borderRadius: '8px 8px 0 0', flexShrink: 0,
+            transition: 'color 0.12s, background 0.12s',
           }}
-          onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-secondary)'; (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.05)' }}
-          onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-tertiary)'; (e.currentTarget as HTMLButtonElement).style.background = 'transparent' }}
+          onMouseEnter={e => {
+            const b = e.currentTarget as HTMLButtonElement
+            b.style.color = 'var(--text-secondary)'
+            b.style.background = 'rgba(255,255,255,0.06)'
+          }}
+          onMouseLeave={e => {
+            const b = e.currentTarget as HTMLButtonElement
+            b.style.color = 'var(--text-tertiary)'
+            b.style.background = 'transparent'
+          }}
         >
           <Plus size={14} />
         </button>

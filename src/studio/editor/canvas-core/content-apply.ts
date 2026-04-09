@@ -706,8 +706,41 @@ export async function injectGeneratedImage(
   }
 
   if (!candidates.length) {
-    console.warn('[injectGeneratedImage] No image slot found on canvas — nothing injected')
-    return false
+    // Fallback: no designated slot — add image centered on canvas at 80% canvas size
+    console.warn('[injectGeneratedImage] No image slot — adding as new background image')
+    try {
+      const cw = canvas.width  ?? 1080
+      const ch = canvas.height ?? 1350
+      const imgEl = new window.Image()
+      imgEl.crossOrigin = 'anonymous'
+      await new Promise<void>((resolve, reject) => {
+        imgEl.onload = (): void => {
+          const iw = imgEl.naturalWidth  || imgEl.width  || 1
+          const ih = imgEl.naturalHeight || imgEl.height || 1
+          const targetW = cw * 0.8
+          const targetH = ch * 0.8
+          const scale = Math.min(targetW / iw, targetH / ih)
+          const img = new fabric.FabricImage(imgEl, {
+            left:    cw / 2,
+            top:     ch / 2,
+            originX: 'center',
+            originY: 'center',
+            scaleX:  scale,
+            scaleY:  scale,
+          })
+          canvas.add(img)
+          canvas.sendObjectToBack(img)
+          canvas.renderAll()
+          resolve()
+        }
+        imgEl.onerror = (): void => reject(new Error('Failed to load fallback image'))
+        imgEl.src = imageUrl
+      })
+      return true
+    } catch (e) {
+      console.error('[injectGeneratedImage] Fallback injection failed:', e)
+      return false
+    }
   }
 
   // Pick best: lowest priority number wins; within same priority, largest area wins

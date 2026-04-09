@@ -827,6 +827,156 @@ def delete_skill(skill_id: str):
     return {"status": "deleted"}
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# MODEL / PROVIDER ROUTES
+# ══════════════════════════════════════════════════════════════════════════════
+
+from providers import PROVIDERS, FEATURES, get_provider_key
+from model_registry import get_models, ALL_MODELS
+
+
+@app.get("/api/providers")
+def list_providers():
+    """All providers with their settings schemas."""
+    result = {}
+    for pid, pdata in PROVIDERS.items():
+        result[pid] = {
+            "name":            pdata["name"],
+            "env_key":         pdata.get("env_key"),
+            "base_url":        pdata.get("base_url"),
+            "client_type":     pdata.get("client_type"),
+            "settings_schema": pdata.get("settings_schema", []),
+            "key_set":         bool(get_provider_key(pid)),
+        }
+    return {"providers": result, "features": FEATURES}
+
+
+@app.get("/api/providers/{provider}/models")
+async def get_provider_models(provider: str):
+    """
+    Live model list for a provider (fetched from provider API + static fallback).
+    Falls back gracefully if no key or provider doesn't support discovery.
+    """
+    if provider not in PROVIDERS:
+        raise HTTPException(status_code=404, detail=f"Unknown provider: {provider}")
+    from model_discovery import discover_models
+    api_key  = get_provider_key(provider)
+    base_url = PROVIDERS[provider].get("base_url") or ""
+    models   = await discover_models(provider, api_key, base_url)
+    return {"provider": provider, "models": models, "count": len(models)}
+
+
+@app.get("/api/models")
+async def list_all_models(model_type: str = None, provider: str = None):
+    """Static catalogue merged with live discovery for any provider with a key set."""
+    from model_discovery import discover_all
+
+    static = get_models(provider=provider or None, model_type=model_type or None)
+
+    # Collect keys for providers that have one set
+    keyed = {p: get_provider_key(p) for p in PROVIDERS if get_provider_key(p)}
+    if keyed:
+        try:
+            live_map = await asyncio.wait_for(discover_all(keyed), timeout=6)
+            seen = {m["id"] for m in static}
+            for pid, live_models in live_map.items():
+                if provider and pid != provider:
+                    continue
+                for m in live_models:
+                    if m["id"] not in seen:
+                        if not model_type or m.get("type") == model_type:
+                            static.append(m)
+                            seen.add(m["id"])
+        except Exception as e:
+            log.debug("Live discovery skipped: %s", e)
+
+    return {"models": static, "count": len(static)}
+
+
+class LLMFeatureConfigBody(BaseModel):
+    feature:     str
+    provider:    str
+    model:       str
+    temperature: Optional[float] = None
+    max_tokens:  Optional[int]   = None
+    top_p:       Optional[float] = None
+    # Extended params — stored as-is in the config blob
+    extra:       Optional[dict]  = None
+
+
+@app.get("/api/llm-config")
+def get_llm_config():
+    """Per-feature LLM configs (provider, model, params)."""
+    from providers import DEFAULT_PROVIDER, DEFAULT_MODEL
+    cfg = load_search_config()
+    features_cfg = cfg.get("llm_features", {})
+    # Ensure every known feature has an entry
+    for f in FEATURES:
+        if f not in features_cfg:
+            features_cfg[f] = {"provider": DEFAULT_PROVIDER, "model": DEFAULT_MODEL}
+    return {"llm_features": features_cfg, "features": FEATURES}
+
+
+@app.post("/api/llm-config")
+def save_llm_config(body: LLMFeatureConfigBody):
+    """Save model + params for one feature and hot-reload the pipeline LLM."""
+    if body.feature not in FEATURES:
+        raise HTTPException(status_code=400, detail=f"Unknown feature '{body.feature}'. Valid: {FEATURES}")
+    if body.provider not in PROVIDERS:
+        raise HTTPException(status_code=400, detail=f"Unknown provider: {body.provider}")
+
+    cfg = load_search_config()
+    features_cfg = cfg.setdefault("llm_features", {})
+
+    entry: dict = {"provider": body.provider, "model": body.model}
+    if body.temperature is not None: entry["temperature"] = body.temperature
+    if body.max_tokens  is not None: entry["max_tokens"]  = body.max_tokens
+    if body.top_p       is not None: entry["top_p"]       = body.top_p
+    if body.extra:                   entry.update(body.extra)
+
+    features_cfg[body.feature] = entry
+    save_search_config(cfg)
+
+    if pipeline is not None:
+        pipeline.reload_config()
+
+    return {"status": "saved", "feature": body.feature,
+            "provider": body.provider, "model": body.model}
+
+
+class ProviderKeyBody(BaseModel):
+    provider: str
+    api_key:  str
+
+
+@app.post("/api/provider-key")
+def save_provider_key(body: ProviderKeyBody):
+    """Persist an API key for a provider to .env and hot-reload."""
+    if body.provider not in PROVIDERS:
+        raise HTTPException(status_code=400, detail=f"Unknown provider: {body.provider}")
+    env_key = PROVIDERS[body.provider].get("env_key")
+    if not env_key:
+        raise HTTPException(status_code=400, detail=f"'{body.provider}' needs no API key.")
+    env_path = os.path.join(os.path.dirname(__file__), ".env")
+    set_key(env_path, env_key, body.api_key.strip())
+    load_dotenv(env_path, override=True)
+    if pipeline is not None:
+        pipeline.reload_config()
+    return {"status": "saved", "provider": body.provider}
+
+
+@app.get("/api/provider-key/{provider}")
+def check_provider_key(provider: str):
+    """Check whether an API key is currently set for a provider."""
+    if provider not in PROVIDERS:
+        raise HTTPException(status_code=404, detail=f"Unknown provider: {provider}")
+    env_key  = PROVIDERS[provider].get("env_key")
+    requires = bool(env_key)
+    is_set   = bool(get_provider_key(provider)) if requires else True
+    return {"provider": provider, "requires_key": requires, "key_set": is_set}
+
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    uvicorn.run("api:app", host="127.0.0.1", port=8000, reload=True,
+                reload_dirs=[os.path.dirname(__file__)])

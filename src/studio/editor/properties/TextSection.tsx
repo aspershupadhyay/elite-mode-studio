@@ -1,7 +1,8 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import type { FabricObject, Canvas as FabricCanvas } from 'fabric'
 import '@/types/fabric-custom'
-import { FONT_REGISTRY, FONT_CATEGORIES } from '../../data/fonts'
+import { FONT_REGISTRY, FONT_CATEGORIES, getDisplayFontFamily, getCanvasFontFamily } from '../../data/fonts'
+import { useBrandKit } from './BrandKitPanel'
 import {
   AlignLeftIcon, AlignCenterIcon, AlignRightIcon,
   BoldIcon, ItalicIcon, UnderlineIcon, ChevronDownIcon,
@@ -39,6 +40,7 @@ const WEIGHT_LABELS: Record<string, string> = {
   '100': 'Thin', '200': 'ExtraLight', '300': 'Light', '400': 'Regular',
   '500': 'Medium', '600': 'SemiBold', '700': 'Bold', '800': 'ExtraBold', '900': 'Black',
 }
+const WEIGHT_VALUES = ['100','200','300','400','500','600','700','800','900'] as const
 
 export function TextSection({
   object,
@@ -50,10 +52,18 @@ export function TextSection({
   onPreview,
   onClearPreview,
 }: TextSectionProps): JSX.Element {
-  const [fontSearch, setFontSearch]       = useState('')
+  const brand = useBrandKit()
+  const [fontSearch, setFontSearch]         = useState('')
   const [showFontPicker, setShowFontPicker] = useState(false)
   const [showWeightPicker, setShowWeightPicker] = useState(false)
-  const [showBgPicker, setShowBgPicker] = useState(false)
+  const [showBgPicker, setShowBgPicker]     = useState(false)
+
+  // Arrow key navigation for font picker
+  const [fontHoverIdx, setFontHoverIdx] = useState(-1)
+  const fontListRef = useRef<HTMLDivElement>(null)
+
+  // Arrow key navigation for weight picker
+  const [weightHoverIdx, setWeightHoverIdx] = useState(-1)
 
   // Recently used fonts (persisted in localStorage)
   const [recentFonts, setRecentFonts] = useState<string[]>(() => {
@@ -86,7 +96,8 @@ export function TextSection({
     textBackgroundColor?: string
   }
 
-  const objFontFamily = (fabricObj.fontFamily || 'Inter').replace(/, sans-serif/g, '')
+  // Strip both ", sans-serif" and " Variable" for display
+  const objFontFamily = getDisplayFontFamily(fabricObj.fontFamily || 'Inter')
   const objFontWeight = String(fabricObj.fontWeight || '400')
   const objFontStyle  = fabricObj.fontStyle  || 'normal'
   const objUnderline  = fabricObj.underline  || false
@@ -111,9 +122,38 @@ export function TextSection({
     return systemFonts.filter(f => f.toLowerCase().includes(q))
   }, [fontSearch, systemFonts])
 
+  // Flat ordered list of all visible font families (for arrow key nav)
+  const allFontItems = useMemo((): string[] => {
+    const items: string[] = []
+    if (!fontSearch) {
+      // Brand fonts first
+      if (brand?.headingFont) items.push(brand.headingFont)
+      if (brand?.bodyFont && brand.bodyFont !== brand.headingFont) items.push(brand.bodyFont)
+      recentFonts.forEach(f => items.push(f))
+      filteredSystemFonts.slice(0, 20).forEach(f => items.push(f))
+    } else {
+      filteredSystemFonts.slice(0, 50).forEach(f => items.push(f))
+    }
+    ;(FONT_CATEGORIES as string[]).forEach(cat => {
+      filteredFonts.filter((f: FontEntry) => f.category === cat).forEach(f => items.push(f.family))
+    })
+    return items
+  }, [brand, filteredFonts, filteredSystemFonts, recentFonts, fontSearch])
+
+  // Reset hover index when picker opens/search changes
+  useEffect(() => { setFontHoverIdx(-1) }, [showFontPicker, fontSearch])
+  useEffect(() => { setWeightHoverIdx(-1) }, [showWeightPicker])
+
+  // Scroll hovered font item into view
+  useEffect(() => {
+    if (fontHoverIdx < 0 || !fontListRef.current) return
+    const el = fontListRef.current.querySelector(`[data-fidx="${fontHoverIdx}"]`) as HTMLElement | null
+    el?.scrollIntoView({ block: 'nearest' })
+  }, [fontHoverIdx])
+
   // ── Derived display values ────────────────────────────────────────────────
   const dispFont = inSelectionMode
-    ? (selMixed.fontFamily ? '(Mixed)' : ((String(selResolved.fontFamily || '')).replace(/['"]/g, '').split(',')[0].trim() || ''))
+    ? (selMixed.fontFamily ? '(Mixed)' : getDisplayFontFamily(String(selResolved.fontFamily || 'Inter')))
     : objFontFamily
 
   const dispSize = inSelectionMode
@@ -133,7 +173,7 @@ export function TextSection({
 
   // ── Actions ────────────────────────────────────────────────────────────────
   const setFont = (family: string): void => {
-    if (inSelectionMode) onApplyInline({ fontFamily: `'${family}', sans-serif` })
+    if (inSelectionMode) onApplyInline({ fontFamily: `'${getCanvasFontFamily(family)}', sans-serif` })
     else onUpdate('fontFamily', family)
     addRecentFont(family)
     setShowFontPicker(false)
@@ -172,6 +212,70 @@ export function TextSection({
     }
   }
 
+  // ── Keyboard navigation handlers ───────────────────────────────────────────
+  const handleFontKeyDown = (e: React.KeyboardEvent<HTMLInputElement>): void => {
+    if (!showFontPicker) return
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setFontHoverIdx(i => Math.min(i + 1, allFontItems.length - 1))
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setFontHoverIdx(i => Math.max(i - 1, 0))
+    } else if (e.key === 'Enter') {
+      e.preventDefault()
+      if (fontHoverIdx >= 0 && fontHoverIdx < allFontItems.length) {
+        setFont(allFontItems[fontHoverIdx])
+      }
+    } else if (e.key === 'Escape') {
+      setShowFontPicker(false)
+    }
+  }
+
+  const handleWeightKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>): void => {
+    if (!showWeightPicker) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setShowWeightPicker(true) }
+      return
+    }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setWeightHoverIdx(i => Math.min(i + 1, WEIGHT_VALUES.length - 1))
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setWeightHoverIdx(i => Math.max(i - 1, 0))
+    } else if (e.key === 'Enter') {
+      e.preventDefault()
+      if (weightHoverIdx >= 0) setWeight(WEIGHT_VALUES[weightHoverIdx])
+    } else if (e.key === 'Escape') {
+      setShowWeightPicker(false)
+    }
+  }
+
+  // ── Render helpers ─────────────────────────────────────────────────────────
+
+  // Build a flat idx counter across all font sections
+  let fontIdxCounter = 0
+
+  const renderFontButton = (family: string, prefix: string): JSX.Element => {
+    const idx = fontIdxCounter++
+    const isHovered = idx === fontHoverIdx
+    const isCurrent = dispFont === family
+    return (
+      <button key={`${prefix}-${family}`}
+        data-fidx={idx}
+        onClick={() => setFont(family)}
+        onMouseEnter={() => {
+          setFontHoverIdx(idx)
+          if (!inSelectionMode) onPreview('fontFamily', family)
+        }}
+        onMouseLeave={() => { if (!inSelectionMode) onClearPreview('fontFamily') }}
+        className={`w-full text-left px-3 py-1.5 text-[12px] transition-colors cursor-pointer
+          ${isCurrent ? 'text-accent bg-accent/8' : isHovered ? 'text-warm bg-elite-700/80' : 'text-warm-muted hover:text-warm hover:bg-elite-700/60'}`}
+        style={{ fontFamily: `'${getCanvasFontFamily(family)}', sans-serif` }}>
+        {family}
+      </button>
+    )
+  }
+
   return (
     <>
       {/* Font family */}
@@ -181,7 +285,7 @@ export function TextSection({
             className="w-full flex items-center justify-between bg-elite-800 border border-elite-600/40 rounded px-2.5 py-1.5 hover:border-accent/40 transition-colors cursor-pointer">
             <span
               className={`text-[11px] truncate ${selMixed.fontFamily && inSelectionMode ? 'text-warm-faint italic' : 'text-warm'}`}
-              style={{ fontFamily: selMixed.fontFamily && inSelectionMode ? 'sans-serif' : `'${dispFont}', sans-serif` }}>
+              style={{ fontFamily: selMixed.fontFamily && inSelectionMode ? 'sans-serif' : `'${getCanvasFontFamily(dispFont)}', sans-serif` }}>
               {dispFont || 'Font'}
             </span>
             <ChevronDownIcon size={12} className="text-warm-faint flex-shrink-0"/>
@@ -189,39 +293,66 @@ export function TextSection({
           {showFontPicker && (
             <div className="dropdown-panel absolute left-0 right-0 top-full mt-1 z-[200] max-h-[320px] flex flex-col">
               <div className="p-2 border-b border-elite-600/30">
-                <input type="text" value={fontSearch} onChange={e => setFontSearch(e.target.value)} placeholder="Search fonts..."
-                  className="w-full bg-elite-700 border border-elite-600/40 rounded px-2 py-1.5 text-[11px] text-warm placeholder-warm-faint outline-none focus:border-accent/50"/>
+                <input
+                  type="text"
+                  autoFocus
+                  value={fontSearch}
+                  onChange={e => setFontSearch(e.target.value)}
+                  onKeyDown={handleFontKeyDown}
+                  placeholder="Search fonts..."
+                  className="w-full bg-elite-700 border border-elite-600/40 rounded px-2 py-1.5 text-[11px] text-warm placeholder-warm-faint outline-none focus:border-accent/50"
+                />
               </div>
-              <div className="flex-1 overflow-y-auto py-1">
+              <div ref={fontListRef} className="flex-1 overflow-y-auto py-1">
+                {/* Reset idx counter before rendering */}
+                {(() => { fontIdxCounter = 0; return null })()}
+
+                {/* Brand fonts — shown at the very top when no search */}
+                {brand && !fontSearch && (brand.headingFont || brand.bodyFont) && (
+                  <div>
+                    <div className="px-3 pt-2 pb-1 text-[9px] font-semibold text-accent/70 uppercase tracking-widest">Brand</div>
+                    {[
+                      { family: brand.headingFont, role: 'Heading' },
+                      { family: brand.bodyFont, role: 'Body' },
+                    ].filter(f => f.family).map(({ family, role }) => {
+                      const idx = fontIdxCounter++
+                      const isHovered = idx === fontHoverIdx
+                      const isCurrent = dispFont === family
+                      return (
+                        <button key={`brand-${family}`}
+                          data-fidx={idx}
+                          onClick={() => setFont(family)}
+                          onMouseEnter={() => {
+                            setFontHoverIdx(idx)
+                            if (!inSelectionMode) onPreview('fontFamily', family)
+                          }}
+                          onMouseLeave={() => { if (!inSelectionMode) onClearPreview('fontFamily') }}
+                          className={`w-full text-left px-3 py-1.5 text-[12px] transition-colors cursor-pointer flex items-center gap-2
+                            ${isCurrent ? 'text-accent bg-accent/8' : isHovered ? 'text-warm bg-elite-700/80' : 'text-warm-muted hover:text-warm hover:bg-elite-700/60'}`}
+                          style={{ fontFamily: `'${getCanvasFontFamily(family)}', sans-serif` }}>
+                          <span className="flex-1">{family}</span>
+                          <span className="text-[9px] text-accent/50 uppercase tracking-wider">{role}</span>
+                        </button>
+                      )
+                    })}
+                    <div className="mx-3 my-1 border-t border-accent/10"/>
+                  </div>
+                )}
+
                 {/* Recently used fonts */}
                 {recentFonts.length > 0 && !fontSearch && (
                   <div>
                     <div className="px-3 pt-2 pb-1 text-[9px] font-semibold text-accent/70 uppercase tracking-widest">Recent</div>
-                    {recentFonts.map(family => (
-                      <button key={`recent-${family}`} onClick={() => setFont(family)}
-                        onMouseEnter={() => { if (!inSelectionMode) onPreview('fontFamily', family) }}
-                        onMouseLeave={() => { if (!inSelectionMode) onClearPreview('fontFamily') }}
-                        className={`w-full text-left px-3 py-1.5 text-[12px] transition-colors cursor-pointer ${dispFont === family ? 'text-accent bg-accent/8' : 'text-warm-muted hover:text-warm hover:bg-elite-700/60'}`}
-                        style={{ fontFamily: `'${family}', sans-serif` }}>
-                        {family}
-                      </button>
-                    ))}
+                    {recentFonts.map(family => renderFontButton(family, 'recent'))}
                     <div className="mx-3 my-1 border-t border-elite-600/20"/>
                   </div>
                 )}
+
                 {/* System fonts */}
                 {filteredSystemFonts.length > 0 && (
                   <div>
                     <div className="px-3 pt-2 pb-1 text-[9px] font-semibold text-warm-faint uppercase tracking-widest">System Fonts</div>
-                    {filteredSystemFonts.slice(0, fontSearch ? 50 : 20).map(family => (
-                      <button key={`sys-${family}`} onClick={() => setFont(family)}
-                        onMouseEnter={() => { if (!inSelectionMode) onPreview('fontFamily', family) }}
-                        onMouseLeave={() => { if (!inSelectionMode) onClearPreview('fontFamily') }}
-                        className={`w-full text-left px-3 py-1.5 text-[12px] transition-colors cursor-pointer ${dispFont === family ? 'text-accent bg-accent/8' : 'text-warm-muted hover:text-warm hover:bg-elite-700/60'}`}
-                        style={{ fontFamily: `'${family}', sans-serif` }}>
-                        {family}
-                      </button>
-                    ))}
+                    {filteredSystemFonts.slice(0, fontSearch ? 50 : 20).map(family => renderFontButton(family, 'sys'))}
                     {!fontSearch && filteredSystemFonts.length > 20 && (
                       <div className="px-3 py-1 text-[10px] text-warm-faint/50">
                         +{filteredSystemFonts.length - 20} more — type to search
@@ -230,21 +361,15 @@ export function TextSection({
                     <div className="mx-3 my-1 border-t border-elite-600/20"/>
                   </div>
                 )}
+
+                {/* Bundled fonts by category */}
                 {(FONT_CATEGORIES as string[]).map(cat => {
                   const fonts = filteredFonts.filter((f: FontEntry) => f.category === cat)
                   if (!fonts.length) return null
                   return (
                     <div key={cat}>
                       <div className="px-3 pt-2 pb-1 text-[9px] font-semibold text-warm-faint uppercase tracking-widest">{cat}</div>
-                      {fonts.map((font: FontEntry) => (
-                        <button key={font.family} onClick={() => setFont(font.family)}
-                          onMouseEnter={() => { if (!inSelectionMode) onPreview('fontFamily', font.family) }}
-                          onMouseLeave={() => { if (!inSelectionMode) onClearPreview('fontFamily') }}
-                          className={`w-full text-left px-3 py-1.5 text-[12px] transition-colors cursor-pointer ${dispFont === font.family ? 'text-accent bg-accent/8' : 'text-warm-muted hover:text-warm hover:bg-elite-700/60'}`}
-                          style={{ fontFamily: `'${font.family}', sans-serif` }}>
-                          {font.family}
-                        </button>
-                      ))}
+                      {fonts.map((font: FontEntry) => renderFontButton(font.family, cat))}
                     </div>
                   )
                 })}
@@ -267,18 +392,24 @@ export function TextSection({
         </Section>
         <Section title="Weight">
           <div className="relative">
-            <button onClick={() => setShowWeightPicker(!showWeightPicker)}
+            <button
+              onKeyDown={handleWeightKeyDown}
+              onClick={() => setShowWeightPicker(!showWeightPicker)}
               className="w-full flex items-center justify-between bg-elite-800 border border-elite-600/40 rounded px-2.5 py-1.5 hover:border-accent/40 transition-colors cursor-pointer">
               <span className={`text-[11px] ${inSelectionMode && selMixed.fontWeight ? 'text-warm-faint italic' : 'text-warm'}`}>{dispWeight}</span>
               <ChevronDownIcon size={12} className="text-warm-faint flex-shrink-0"/>
             </button>
             {showWeightPicker && (
               <div className="dropdown-panel absolute left-0 right-0 top-full mt-1 z-[200] max-h-[250px] overflow-y-auto py-1">
-                {(['100','200','300','400','500','600','700','800','900'] as string[]).map(v => (
+                {WEIGHT_VALUES.map((v, i) => (
                   <button key={v} onClick={() => setWeight(v)}
-                    onMouseEnter={() => { if (!inSelectionMode) onPreview('fontWeight', v) }}
+                    onMouseEnter={() => {
+                      setWeightHoverIdx(i)
+                      if (!inSelectionMode) onPreview('fontWeight', v)
+                    }}
                     onMouseLeave={() => { if (!inSelectionMode) onClearPreview('fontWeight') }}
-                    className={`w-full text-left px-3 py-1.5 text-[12px] transition-colors cursor-pointer ${rawWeight === v ? 'text-accent bg-accent/8' : 'text-warm-muted hover:text-warm hover:bg-elite-700/60'}`}
+                    className={`w-full text-left px-3 py-1.5 text-[12px] transition-colors cursor-pointer
+                      ${rawWeight === v ? 'text-accent bg-accent/8' : i === weightHoverIdx ? 'text-warm bg-elite-700/80' : 'text-warm-muted hover:text-warm hover:bg-elite-700/60'}`}
                     style={{ fontWeight: v }}>
                     {WEIGHT_LABELS[v]}
                   </button>

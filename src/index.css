@@ -158,10 +158,37 @@ body {
 
 /* ── Studio panel utilities ─────────────────────────────────────── */
 .studio-panel {
-  background: rgba(var(--elite-900-rgb, 17,17,17), 0.85);
+  background: rgba(17,17,17, 0.85);
   backdrop-filter: blur(20px) saturate(1.2);
   -webkit-backdrop-filter: blur(20px) saturate(1.2);
 }
+[data-theme="light"] .studio-panel {
+  background: rgba(250,248,245, 0.97);
+  backdrop-filter: blur(20px) saturate(1.1);
+  -webkit-backdrop-filter: blur(20px) saturate(1.1);
+}
+
+/* ── Studio canvas dot grid (color swaps per theme) ─────────────── */
+.studio-dot-grid {
+  background-image: radial-gradient(circle, rgba(255,255,255,0.25) 0.8px, transparent 0.8px);
+}
+[data-theme="light"] .studio-dot-grid {
+  background-image: radial-gradient(circle, rgba(0,0,0,0.12) 0.8px, transparent 0.8px);
+}
+
+/* ── Studio canvas card border + shadow (per theme) ─────────────── */
+.studio-canvas-card {
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.06), 0 8px 40px rgba(0,0,0,0.5), 0 2px 12px rgba(0,0,0,0.3);
+  border-radius: 4px;
+}
+[data-theme="light"] .studio-canvas-card {
+  box-shadow: 0 0 0 1.5px rgba(0,0,0,0.18), 0 8px 32px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.08);
+  border-radius: 4px;
+}
+
+/* ── Layer row hover (theme-aware) ──────────────────────────────── */
+.layer-row-hover:hover { background: rgba(255,255,255,0.05) !important; }
+[data-theme="light"] .layer-row-hover:hover { background: rgba(0,0,0,0.05) !important; }
 
 /* Premium button press micro-interaction */
 .btn-press:active { transform: scale(0.97); }
@@ -270,11 +297,14 @@ canvas + textarea,
 .bg-elite-900\/90 { background-color: rgba(5,5,5,0.90)   !important; }
 .bg-elite-900\/50 { background-color: rgba(5,5,5,0.50)   !important; }
 .bg-elite-800\/60 { background-color: rgba(17,17,17,0.60) !important; }
+.bg-elite-800\/90 { background-color: rgba(17,17,17,0.90) !important; }
 .bg-elite-800\/95 { background-color: rgba(17,17,17,0.95) !important; }
+.bg-elite-800\/50 { background-color: rgba(17,17,17,0.50) !important; }
 .bg-elite-700\/60 { background-color: rgba(24,24,24,0.60) !important; }
 .bg-elite-700\/80 { background-color: rgba(24,24,24,0.80) !important; }
 
 /* ── Elite border scale ─────────────────────────────────────────── */
+.border-elite-600\/20 { border-color: rgba(255,255,255,0.044) !important; }
 .border-elite-600\/25 { border-color: rgba(255,255,255,0.055) !important; }
 .border-elite-600\/30 { border-color: rgba(255,255,255,0.088) !important; }
 .border-elite-600\/40 { border-color: rgba(255,255,255,0.12)  !important; }
@@ -284,6 +314,36 @@ canvas + textarea,
 .text-warm       { color: var(--text-primary)   !important; }
 .text-warm-muted { color: var(--text-secondary) !important; }
 .text-warm-faint { color: var(--text-tertiary)  !important; }
+
+/* ── Light mode overrides: bg-elite opacity variants ────────────── */
+[data-theme="light"] .bg-elite-900\/90 { background-color: rgba(250,248,245,0.96) !important; }
+[data-theme="light"] .bg-elite-900\/50 { background-color: rgba(250,248,245,0.50) !important; }
+[data-theme="light"] .bg-elite-800    { background-color: #FFFFFF !important; }
+[data-theme="light"] .bg-elite-800\/90 { background-color: rgba(255,255,255,0.96) !important; }
+[data-theme="light"] .bg-elite-800\/95 { background-color: rgba(255,255,255,0.98) !important; }
+[data-theme="light"] .bg-elite-800\/60 { background-color: rgba(255,255,255,0.70) !important; }
+[data-theme="light"] .bg-elite-700    { background-color: #F0EDE8 !important; }
+[data-theme="light"] .bg-elite-700\/60 { background-color: rgba(232,227,220,0.70) !important; }
+[data-theme="light"] .bg-elite-700\/80 { background-color: rgba(232,227,220,0.85) !important; }
+[data-theme="light"] .bg-elite-600\/50 { background-color: rgba(220,215,208,0.80) !important; }
+[data-theme="light"] .hover\:bg-elite-600\/50:hover { background-color: rgba(220,215,208,0.90) !important; }
+[data-theme="light"] .bg-elite-800\/50 { background-color: rgba(255,255,255,0.60) !important; }
+[data-theme="light"] .border-elite-600\/20 { border-color: rgba(0,0,0,0.10) !important; }
+
+/* ── Light mode overrides: border-elite ─────────────────────────── */
+[data-theme="light"] .border-elite-600\/25 { border-color: rgba(0,0,0,0.08) !important; }
+[data-theme="light"] .border-elite-600\/30 { border-color: rgba(0,0,0,0.12) !important; }
+[data-theme="light"] .border-elite-600\/40 { border-color: rgba(0,0,0,0.16) !important; }
+[data-theme="light"] .border-elite-600\/50 { border-color: rgba(0,0,0,0.22) !important; }
+
+/* ── Light mode overrides: shadow overrides ─────────────────────── */
+[data-theme="light"] .shadow-xl { box-shadow: 0 4px 16px rgba(0,0,0,0.12), 0 1px 4px rgba(0,0,0,0.08) !important; }
+[data-theme="light"] .shadow-2xl { box-shadow: 0 8px 24px rgba(0,0,0,0.14), 0 2px 8px rgba(0,0,0,0.08) !important; }
+
+/* ── Light mode overrides: hover states ─────────────────────────── */
+[data-theme="light"] .hover\:bg-elite-700:hover      { background-color: #E8E3DC !important; }
+[data-theme="light"] .hover\:bg-elite-700\/60:hover  { background-color: rgba(232,227,220,0.80) !important; }
+[data-theme="light"] .hover\:text-white:hover         { color: #1C1C1E !important; }
 
 /* ── Shadow (accent-aware) ──────────────────────────────────────── */
 .shadow-accent\/5 {
@@ -328,6 +388,9 @@ canvas + textarea,
   transform-origin: top center;
   animation: dropdown-enter 0.15s ease-out forwards;
   color: var(--text-primary);
+}
+[data-theme="light"] .dropdown-panel {
+  box-shadow: 0 8px 32px rgba(0,0,0,0.14), 0 2px 8px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.06);
 }
 
 /* ── Sidebar nav item left-bar active indicator ──────────────────── */

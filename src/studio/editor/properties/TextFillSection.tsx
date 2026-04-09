@@ -15,7 +15,8 @@ import React, { useState, useEffect, useRef } from 'react'
 import * as fabric from 'fabric'
 import type { FabricObject, Canvas as FabricCanvas } from 'fabric'
 import '@/types/fabric-custom'
-import { TexturePanel, applyTexture, removeTexture, parseTexture, restoreTexturePatch } from './texture'
+import { TexturePanel, applyTexture, removeTexture, parseTexture, restoreTexturePatch,
+         applyCharTexture, removeCharTexture, removeAllCharTextures } from './texture'
 import type { TextureParams } from './texture'
 
 // ── Internal types ─────────────────────────────────────────────────────────────
@@ -182,6 +183,30 @@ function applyGradSmart(obj: FabObj, p: GradParams, c: FabricCanvas, inSel: bool
 function applyTex(obj: FabObj, p: TextureParams, c: FabricCanvas): void {
   obj.eliteTextFillMode = 'texture'
   applyTexture(obj, p, c)
+}
+
+/**
+ * Smart texture apply — mirrors applyGradSmart for textures:
+ * - Active character selection → applyCharTexture to [start, end)
+ * - No selection (whole-object mode) → applyTexture on the whole object
+ */
+function applyTexSmart(
+  obj:      FabObj,
+  p:        TextureParams,
+  c:        FabricCanvas,
+  inSel:    boolean,
+): void {
+  const to  = obj as unknown as FabIText
+  const s   = to.selectionStart ?? 0
+  const e   = to.selectionEnd   ?? 0
+  const hasSel = inSel && s !== e
+
+  obj.eliteTextFillMode = 'texture'
+  if (hasSel) {
+    applyCharTexture(obj, s, e, p, c)
+  } else {
+    applyTexture(obj, p, c)
+  }
 }
 
 // ── GradEditor sub-component — Figma-style interactive gradient bar ────────────
@@ -442,16 +467,29 @@ export function TextFillSection({
 
   const handleTexChange = (p: TextureParams): void => {
     setTexParams(p)
-    applyTex(obj, p, canvas)
+    applyTexSmart(obj, p, canvas, inSelectionMode)
   }
 
   const handleTexClear = (): void => {
-    removeTexture(obj, canvas)
-    obj.eliteTextFillMode = 'solid'
-    obj.set('fill', obj.eliteSolidFill || '#EAEAEA')
-    obj.dirty = true; canvas.renderAll()
-    setTexParams({ ...parseTexture(obj) })
-    setMode('solid')
+    // Context-aware: if in selection mode with an active selection, only
+    // clear that character range; otherwise clear everything.
+    const to    = obj as unknown as FabIText
+    const s     = to.selectionStart ?? 0
+    const e     = to.selectionEnd   ?? 0
+    const hasSel = inSelectionMode && s !== e
+
+    if (hasSel) {
+      removeCharTexture(obj, s, e, canvas)
+    } else {
+      // Remove all char textures AND the object-level texture
+      removeAllCharTextures(obj, canvas)
+      removeTexture(obj, canvas)
+      obj.eliteTextFillMode = 'solid'
+      obj.set('fill', obj.eliteSolidFill || '#EAEAEA')
+      obj.dirty = true; canvas.renderAll()
+      setTexParams({ ...parseTexture(obj) })
+      setMode('solid')
+    }
   }
 
   return (
@@ -529,7 +567,19 @@ export function TextFillSection({
 
       {/* Texture mode */}
       {mode === 'texture' && (
-        <TexturePanel params={texParams} onChange={handleTexChange} onClear={handleTexClear}/>
+        <TexturePanel
+          params={texParams}
+          onChange={handleTexChange}
+          onClear={handleTexClear}
+          selectionCharCount={
+            (() => {
+              const to = obj as unknown as FabIText
+              const s  = to.selectionStart ?? 0
+              const e  = to.selectionEnd   ?? 0
+              return inSelectionMode && s !== e ? (e - s) : 0
+            })()
+          }
+        />
       )}
     </div>
   )

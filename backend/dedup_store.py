@@ -18,7 +18,8 @@ from contextlib import contextmanager
 
 log = logging.getLogger(__name__)
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "data", "dedup.db")
+from config import DATA_DIR
+DB_PATH = os.path.join(DATA_DIR, "dedup.db")
 WINDOW_DAYS = 5
 MAX_VARIANTS_PER_CLUSTER = 3
 

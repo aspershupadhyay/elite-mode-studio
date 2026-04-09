@@ -11,8 +11,8 @@ import sqlite3, json, os, uuid
 from datetime import datetime
 from typing import Optional
 
-DB_DIR  = os.path.join(os.path.dirname(__file__), "data")
-DB_PATH = os.path.join(DB_DIR, "elite.db")
+from config import DATA_DIR
+DB_PATH = os.path.join(DATA_DIR, "elite.db")
 
 # ── Default "Standard" schema — mirrors the hardcoded fields in rag.py ────────
 _STANDARD_FIELDS = [
@@ -84,7 +84,7 @@ _STANDARD_SCHEMA = {
 
 
 def _conn():
-    os.makedirs(DB_DIR, exist_ok=True)
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(DB_PATH)
     con.row_factory = sqlite3.Row
     return con
@@ -339,7 +339,7 @@ def attach_image(post_id: str, image_path: str) -> None:
 
 def migrate_posts_json_to_sqlite():
     """Read data/posts.json (if present) and import records into SQLite."""
-    posts_json = os.path.join(DB_DIR, "posts.json")
+    posts_json = os.path.join(str(DATA_DIR), "posts.json")
     if not os.path.exists(posts_json):
         return
     try:

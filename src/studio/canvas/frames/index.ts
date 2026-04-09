@@ -135,6 +135,9 @@ export function addFrame(
   frameObj.eliteImageOffsetY = 0
   frameObj.eliteImageScale   = 1
 
+  // Frames sit flush — no padding gap between frame edge and selection handles
+  frameObj.set({ padding: 0 })
+
   canvas.add(frameObj)
   canvas.setActiveObject(frameObj)
   canvas.renderAll()

@@ -9,6 +9,8 @@ import { useToolbarState, useTextStyleStore } from '../text/TextStyleStore'
 import { useShallow } from 'zustand/react/shallow'
 import type { CanvasHandle } from '@/types/canvas'
 
+import { getCanvasFontFamily, getDisplayFontFamily } from '../data/fonts'
+import BrandKitPanel from './properties/BrandKitPanel'
 import { PositionSection } from './properties/PositionSection'
 import { FillSection, StrokeSection, GradientSection } from './properties/FillSection'
 import { TextSection } from './properties/TextSection'
@@ -229,9 +231,10 @@ export default function PropertiesPanel({ selectedObject, canvas, canvasRef }: P
     textAlign: 'left', fontStyle: 'normal', underline: false, stroke: '', strokeWidth: 0, rx: 0,
   })
   const [bgColor, setBgColor]           = useState('#111111')
-  const [gradTopColor, setGradTopColor]       = useState('rgba(17,17,17,0)')
-  const [gradBottomColor, setGradBottomColor] = useState('rgba(17,17,17,1)')
-  const [gradOpacity, setGradOpacity]         = useState(1)
+  const [gradColor, setGradColor]     = useState('#111111')
+  const [gradDir, setGradDir]         = useState('tb')
+  const [gradStrength, setGradStrength] = useState(1)
+  const [gradOpacity, setGradOpacity] = useState(1)
 
   const logoInputRef = useRef<HTMLInputElement>(null)
 
@@ -275,7 +278,7 @@ export default function PropertiesPanel({ selectedObject, canvas, canvasRef }: P
       fill:   fillStr,
       fontSize:   obj.fontSize   || 72,
       fontWeight: String(obj.fontWeight || '400'),
-      fontFamily: (obj.fontFamily || 'Inter').replace(/, sans-serif/g, ''),
+      fontFamily: getDisplayFontFamily(obj.fontFamily || 'Inter'),
       text:         obj.text         || '',
       opacity:      selectedObject.opacity ?? 1,
       charSpacing:  obj.charSpacing  || 0,
@@ -295,12 +298,10 @@ export default function PropertiesPanel({ selectedObject, canvas, canvasRef }: P
     })
 
     // Gradient init
-    if (selectedObject.eliteType === 'gradient' && fill instanceof fabric.Gradient) {
-      const stops = (fill as fabric.Gradient<'linear' | 'radial'> & { colorStops?: Array<{ color: string }> }).colorStops || []
-      if (stops.length >= 2) {
-        setGradTopColor(stops[0].color || 'rgba(17,17,17,0)')
-        setGradBottomColor(stops[1].color || 'rgba(17,17,17,1)')
-      }
+    if (selectedObject.eliteType === 'gradient') {
+      setGradColor(selectedObject.eliteGradColor || '#111111')
+      setGradDir(selectedObject.eliteGradDir || 'tb')
+      setGradStrength(selectedObject.eliteGradStrength ?? 1)
       setGradOpacity(selectedObject.opacity ?? 1)
     }
   }, [selectedObject])
@@ -336,22 +337,21 @@ export default function PropertiesPanel({ selectedObject, canvas, canvasRef }: P
         if (cp) cp.set({ rx: rxLocal, ry: ryLocal })
       }
     } else {
-      // fontFamily needs `, sans-serif` suffix and font-load confirmation
+      // fontFamily needs the exact CSS name (variable fonts: "Inter Variable")
       if (key === 'fontFamily') {
-        const familyWithFallback = `${value}, sans-serif`
+        const cssFamily = getCanvasFontFamily(String(value))
+        const familyWithFallback = `${cssFamily}, sans-serif`
         selectedObject.set('fontFamily', familyWithFallback)
         // Clear per-char fontFamily overrides so object-level value applies everywhere
         const isTextObj = ['itext', 'textbox'].includes(selectedObject.type ?? '')
         if (isTextObj) {
           clearAllSpanStyleKeys(selectedObject, canvas, ['fontFamily', 'fontWeight'])
         }
-        // Ensure font is loaded before rendering (bundled fonts should be instant)
-        const fontFace = `${value}`
-        document.fonts.load(`400 16px "${fontFace}"`).then(() => {
+        // Ensure font is loaded before rendering
+        document.fonts.load(`400 16px "${cssFamily}"`).then(() => {
           ;(selectedObject as FabricObject & { dirty?: boolean }).dirty = true
           canvas.requestRenderAll()
         }).catch(() => {
-          // Font may not be loadable via FontFaceSet — render anyway
           canvas.requestRenderAll()
         })
       } else {
@@ -373,9 +373,9 @@ export default function PropertiesPanel({ selectedObject, canvas, canvasRef }: P
     if (!selectedObject || !canvas) return
     if (key === 'fill' && typeof selectedObject.fill !== 'string') return
     if (key === 'fontFamily') {
-      selectedObject.set('fontFamily', `${value}, sans-serif`)
-      // Confirm font is loaded, then re-render
-      document.fonts.load(`400 16px "${value}"`).then(() => {
+      const cssFamily = getCanvasFontFamily(String(value))
+      selectedObject.set('fontFamily', `${cssFamily}, sans-serif`)
+      document.fonts.load(`400 16px "${cssFamily}"`).then(() => {
         ;(selectedObject as FabricObject & { dirty?: boolean }).dirty = true
         canvas.requestRenderAll()
       }).catch(() => canvas.requestRenderAll())
@@ -388,21 +388,44 @@ export default function PropertiesPanel({ selectedObject, canvas, canvasRef }: P
     if (!selectedObject || !canvas) return
     if (key === 'fill' && typeof selectedObject.fill !== 'string') return
     const orig = props[key as keyof ObjectProps]
-    if (key === 'fontFamily') selectedObject.set('fontFamily', `${orig}, sans-serif`)
+    if (key === 'fontFamily') selectedObject.set('fontFamily', `${getCanvasFontFamily(String(orig))}, sans-serif`)
     else selectedObject.set(key as keyof FabricObject, orig as never)
     ;(selectedObject as FabricObject & { dirty?: boolean }).dirty = true
     canvas.renderAll()
   }
 
-  const updateGradient = (top: string, bot: string): void => {
+  const applyGradient = (color: string, dir: string, strength: number): void => {
     if (!selectedObject || !canvas || selectedObject.eliteType !== 'gradient') return
-    const h = (selectedObject.height || 100) * (selectedObject.scaleY || 1)
+    const w = (selectedObject.width  || 100)
+    const h = (selectedObject.height || 100)
+    // Compute gradient coords (in local object space, before scale)
+    const dirCoords: Record<string, { x1: number; y1: number; x2: number; y2: number }> = {
+      tb:   { x1: 0,   y1: 0,   x2: 0,   y2: h   },
+      bt:   { x1: 0,   y1: h,   x2: 0,   y2: 0   },
+      lr:   { x1: 0,   y1: 0,   x2: w,   y2: 0   },
+      rl:   { x1: w,   y1: 0,   x2: 0,   y2: 0   },
+      tlbr: { x1: 0,   y1: 0,   x2: w,   y2: h   },
+      trbl: { x1: w,   y1: 0,   x2: 0,   y2: h   },
+      bltr: { x1: 0,   y1: h,   x2: w,   y2: 0   },
+      brtl: { x1: w,   y1: h,   x2: 0,   y2: 0   },
+    }
+    const coords = dirCoords[dir] ?? dirCoords.tb
+    // Parse hex color, build rgba stops
+    const r = parseInt(color.slice(1, 3), 16)
+    const g = parseInt(color.slice(3, 5), 16)
+    const b = parseInt(color.slice(5, 7), 16)
     selectedObject.set('fill', new fabric.Gradient({
-      type: 'linear', coords: { x1: 0, y1: 0, x2: 0, y2: h },
-      colorStops: [{ offset: 0, color: top }, { offset: 1, color: bot }],
+      type: 'linear', coords,
+      colorStops: [
+        { offset: 0, color: `rgba(${r},${g},${b},0)` },
+        { offset: 1, color: `rgba(${r},${g},${b},${strength})` },
+      ],
     }))
+    selectedObject.eliteGradColor    = color
+    selectedObject.eliteGradDir      = dir
+    selectedObject.eliteGradStrength = strength
+    ;(selectedObject as FabricObject & { dirty?: boolean }).dirty = true
     canvas.renderAll()
-    setGradTopColor(top); setGradBottomColor(bot)
   }
 
   const updateBgColor = (color: string): void => {
@@ -421,6 +444,33 @@ export default function PropertiesPanel({ selectedObject, canvas, canvasRef }: P
   const isGradient     = eliteType === 'gradient'
   const hasStringFill  = typeof selectedObject?.fill === 'string'
   const isShape        = ['shape','line'].includes(eliteType)
+
+  // ── Add brand logo to canvas as a logo object ─────────────────────────────
+  const addBrandLogoToCanvas = (dataUrl: string): void => {
+    if (!canvas) return
+    const imgEl = new Image()
+    imgEl.onload = () => {
+      const maxW = (canvas.width || 800) * 0.3
+      const maxH = (canvas.height || 800) * 0.2
+      const scale = Math.min(maxW / imgEl.width, maxH / imgEl.height, 1)
+      const pattern = new fabric.Pattern({ source: imgEl, repeat: 'no-repeat' })
+      ;(pattern as fabric.Pattern & { patternTransform?: number[] }).patternTransform = [scale, 0, 0, scale, 0, 0]
+      const logoRect = new fabric.Rect({
+        left: (canvas.width || 800) / 2,
+        top: (canvas.height || 800) / 2,
+        width: imgEl.width * scale,
+        height: imgEl.height * scale,
+        originX: 'center', originY: 'center',
+        fill: pattern, strokeWidth: 0,
+      })
+      logoRect.eliteType = 'logo'
+      logoRect.eliteLabel = 'Brand Logo'
+      canvas.add(logoRect)
+      canvas.setActiveObject(logoRect)
+      canvas.renderAll()
+    }
+    imgEl.src = dataUrl
+  }
 
   // ── Empty state: canvas bg panel ─────────────────────────────────────────
   if (!selectedObject) {
@@ -446,7 +496,13 @@ export default function PropertiesPanel({ selectedObject, canvas, canvasRef }: P
               ))}
             </div>
           </Section>
-          <p className="text-[11px] text-warm-faint text-center pt-4">Select an element to edit its properties</p>
+
+          <BrandKitPanel
+            onAddLogo={addBrandLogoToCanvas}
+            onApplyBgColor={updateBgColor}
+          />
+
+          <p className="text-[11px] text-warm-faint text-center pt-2">Select an element to edit its properties</p>
         </div>
       </div>
     )
@@ -513,10 +569,14 @@ export default function PropertiesPanel({ selectedObject, canvas, canvasRef }: P
         {/* Gradient */}
         {isGradient && (
           <GradientSection
-            gradTopColor={gradTopColor}
-            gradBottomColor={gradBottomColor}
+            gradColor={gradColor}
+            gradDir={gradDir}
+            gradStrength={gradStrength}
             gradOpacity={gradOpacity}
-            onUpdateGradient={updateGradient}
+            onUpdateGradient={(color, dir, strength) => {
+              setGradColor(color); setGradDir(dir); setGradStrength(strength)
+              applyGradient(color, dir, strength)
+            }}
             onUpdateOpacity={(v) => { setGradOpacity(v); update('opacity', v) }}
           />
         )}

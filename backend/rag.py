@@ -581,36 +581,76 @@ class NvidiaRAG:
     def __init__(self):
         # Cache the search config in memory — loaded once here and refreshed
         # only when reload_config() is called (triggered by the settings endpoint).
-        # Previously load_search_config() was called on every single search request.
         self._cfg_cache = load_search_config()
-        cfg = self._cfg_cache["nvidia"]
-        # Read keys directly from os.environ so a load_dotenv(override=True) reload
-        # is picked up correctly when the pipeline is reinitialized after a key update.
-        _nvidia_key  = os.environ.get("NVIDIA_API_KEY", "")
-        _tavily_key  = os.environ.get("TAVILY_API_KEY", "")
-        self.llm      = ChatNVIDIA(model=cfg["llm_model"],    api_key=_nvidia_key, max_completion_tokens=cfg["max_tokens"])
-        self.embedder = NVIDIAEmbeddings(model=cfg["embed_model"],   api_key=_nvidia_key, truncate="END")
-        self.reranker = NVIDIARerank(model=cfg["rerank_model"],      api_key=_nvidia_key, top_n=cfg["top_n_rerank"])
+        cfg             = self._cfg_cache["nvidia"]
+        _nvidia_key     = os.environ.get("NVIDIA_API_KEY", "")
+        _tavily_key     = os.environ.get("TAVILY_API_KEY", "")
+
+        # ── Per-feature LLM cache (built lazily on first use) ────────────────
+        self._feature_llms: dict = {}
+
+        # ── Default LLM: forge feature (falls back to NVIDIA if not configured) ─
+        self.llm = self._build_feature_llm("forge")
+
+        # ── Embedder + reranker always NVIDIA (specialised, not swappable) ───
+        self.embedder = NVIDIAEmbeddings(model=cfg["embed_model"], api_key=_nvidia_key, truncate="END")
+        self.reranker = NVIDIARerank(model=cfg["rerank_model"],    api_key=_nvidia_key, top_n=cfg["top_n_rerank"])
         self.tavily   = TavilyClient(api_key=_tavily_key)
+
         self.vectorstore  = None
-        # Try to load persisted FAISS index from disk
         if os.path.isdir(FAISS_INDEX_PATH):
             try:
-                self.vectorstore = FAISS.load_local(FAISS_INDEX_PATH, self.embedder, allow_dangerous_deserialization=True)
+                self.vectorstore = FAISS.load_local(
+                    FAISS_INDEX_PATH, self.embedder, allow_dangerous_deserialization=True)
                 log.info("FAISS index loaded from disk (%s).", FAISS_INDEX_PATH)
             except Exception as _e:
                 log.warning("Could not load persisted FAISS index: %s", _e)
-                self.vectorstore = None
+
         self.doc_name     = None
         self._top_context = ""
         self.splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=100)
         log.info("NvidiaRAG v9.0 ready")
 
+    # ── LLM helpers ───────────────────────────────────────────────────────────
+
+    def _build_feature_llm(self, feature: str):
+        """Build a fresh LLM client for the given feature from search_config."""
+        from providers import PROVIDERS, DEFAULT_PROVIDER, DEFAULT_MODEL, get_provider_key
+        from llm_factory import create_text_llm
+
+        features_cfg = self._cfg_cache.get("llm_features", {})
+        fcfg = features_cfg.get(feature, {})
+
+        provider   = fcfg.get("provider", DEFAULT_PROVIDER)
+        model      = fcfg.get("model",    DEFAULT_MODEL)
+        api_key    = get_provider_key(provider)
+        base_url   = PROVIDERS.get(provider, {}).get("base_url")
+        params     = {k: v for k, v in fcfg.items()
+                      if k not in ("provider", "model") and v is not None}
+
+        try:
+            llm = create_text_llm(provider, model, api_key, params, base_url)
+            log.info("LLM built: feature=%s  %s/%s", feature, provider, model)
+            return llm
+        except Exception as e:
+            log.warning("LLM build failed (%s/%s): %s — falling back to NVIDIA.", provider, model, e)
+            cfg = self._cfg_cache["nvidia"]
+            return ChatNVIDIA(model=cfg["llm_model"],
+                              api_key=os.environ.get("NVIDIA_API_KEY", ""),
+                              max_completion_tokens=cfg.get("max_tokens", 2048))
+
+    def get_feature_llm(self, feature: str = "forge"):
+        """Return cached LLM for a feature, building it if needed."""
+        if feature not in self._feature_llms:
+            self._feature_llms[feature] = self._build_feature_llm(feature)
+        return self._feature_llms[feature]
+
     def reload_config(self):
-        """Re-read search_config.json from disk and update the in-memory cache.
-        Called by the /api/search-config POST endpoint after a user saves settings."""
-        self._cfg_cache = load_search_config()
-        log.info("Search config reloaded from disk.")
+        """Re-read search_config.json and rebuild all cached LLMs."""
+        self._cfg_cache    = load_search_config()
+        self._feature_llms = {}                     # force rebuild on next use
+        self.llm           = self._build_feature_llm("forge")
+        log.info("Config + LLMs reloaded from disk.")
 
     def _call_llm(self, messages: list) -> str:
         prompt = ChatPromptTemplate.from_messages(messages)
@@ -1131,8 +1171,9 @@ class NvidiaRAG:
             "Each source is labeled [SOURCE: Publisher | url]. Cite inline. No fabrication."
         )
 
+        # Resolve angles for all posts upfront
+        post_configs: list[tuple] = []
         for i, topic_item in enumerate(topics):
-            log.info("Post %d/%d starting: '%s'", i + 1, len(topics), topic_item["title"][:60])
             try:
                 assignment = angle_map.get(i, {
                     "angle": CAMPAIGN_ANGLES[i % len(CAMPAIGN_ANGLES)],
@@ -1144,63 +1185,83 @@ class NvidiaRAG:
                 log.error("Post %d angle assignment failed: %s", i, e)
                 angle      = CAMPAIGN_ANGLES[i % len(CAMPAIGN_ANGLES)]
                 angle_note = ANGLE_PROMPTS.get(angle, "")
+            post_configs.append((i, topic_item, angle, angle_note))
 
-            yield sse({
-                "type":       "post_started",
-                "post_index": i,
-                "angle":      angle,
-                "topic":      topic_item["title"],
-            })
+        # Emit post_started for all posts immediately
+        for i, topic_item, angle, _ in post_configs:
+            log.info("Post %d/%d starting: '%s'", i + 1, len(topics), topic_item["title"][:60])
+            yield sse({"type": "post_started", "post_index": i, "angle": angle, "topic": topic_item["title"]})
 
+        # ── Phase A: Parallel Tavily prefetch ──────────────────────────────────
+        async def _prefetch_web(idx: int, t_item: dict):
+            _query = build_search_query(t_item["title"], freshness)
+            if _query in _web_cache:
+                log.info("Web cache hit for post %d: '%s'", idx, _query[:60])
+                return idx, *_web_cache[_query], None
             try:
-                # ── Web fetch (cache repeated queries) ──────────────────────
-                _query = build_search_query(topic_item["title"], freshness)
-                if _query in _web_cache:
-                    raw_results, sources_meta, tavily_answer, context = _web_cache[_query]
-                    log.info("Web cache hit for post %d: '%s'", i, _query[:60])
-                else:
+                raw_results, sources_meta, tavily_answer = await loop.run_in_executor(
+                    None,
+                    lambda ti=t_item: self._fetch_web_elite(
+                        build_search_query(ti["title"], freshness),
+                        freshness=freshness,
+                        is_news=_is_news,
+                    )
+                )
+                context = build_sourced_context(raw_results) if raw_results else ""
+                if not context and raw_results and self._cfg_cache["tavily"].get("include_domains"):
+                    log.warning("Domain filter yielded no content for '%s'. Retrying without.", t_item["title"][:60])
                     try:
                         raw_results, sources_meta, tavily_answer = await loop.run_in_executor(
                             None,
-                            lambda t=topic_item: self._fetch_web_elite(
-                                build_search_query(t["title"], freshness),
-                                freshness=freshness,
-                                is_news=_is_news,
+                            lambda ti=t_item: self._fetch_web_elite(
+                                build_search_query(ti["title"], freshness),
+                                freshness=freshness, is_news=False,
+                                max_results_override=self._cfg_cache["tavily"].get("max_results", 10),
                             )
                         )
-                    except Exception as e:
-                        yield sse({"type": "post_error", "post_index": i,
-                                   "error": classify_error(e), "topic": topic_item["title"]})
-                        continue
+                        context = build_sourced_context(raw_results) if raw_results else ""
+                    except Exception:
+                        pass
+                if not context:
+                    context = f"Topic: {t_item['title']}\nNo verified sources found."
+                elif tavily_answer:
+                    context = f"[TAVILY VERIFIED SUMMARY]\n{tavily_answer}\n\n---\n\n{context}"
+                _web_cache[_query] = (raw_results, sources_meta, tavily_answer, context)
+                return idx, raw_results, sources_meta, tavily_answer, context, None
+            except Exception as e:
+                return idx, [], [], "", f"Topic: {t_item['title']}\nNo verified sources found.", e
 
-                    context = build_sourced_context(raw_results) if raw_results else ""
-                    if not context and raw_results and self._cfg_cache["tavily"].get("include_domains"):
-                        log.warning("Domain filter yielded no content for '%s'. Retrying without.", topic_item["title"][:60])
-                        try:
-                            raw_results, sources_meta, tavily_answer = await loop.run_in_executor(
-                                None,
-                                lambda t=topic_item: self._fetch_web_elite(
-                                    build_search_query(t["title"], freshness),
-                                    freshness=freshness, is_news=False,
-                                    max_results_override=self._cfg_cache["tavily"].get("max_results", 10),
-                                )
-                            )
-                            context = build_sourced_context(raw_results) if raw_results else ""
-                        except Exception:
-                            pass
-                    if not context:
-                        context = f"Topic: {topic_item['title']}\nNo verified sources found."
-                    elif tavily_answer:
-                        context = f"[TAVILY VERIFIED SUMMARY]\n{tavily_answer}\n\n---\n\n{context}"
-                    _web_cache[_query] = (raw_results, sources_meta, tavily_answer, context)
+        fetch_results = await asyncio.gather(
+            *[_prefetch_web(i, t) for i, t, _, _ in post_configs]
+        )
 
-                yield sse({"type": "web_fetched", "post_index": i, "source_count": len(sources_meta)})
+        # Emit web_fetched for each and collect web data
+        web_data: dict = {}
+        for fetch_res in fetch_results:
+            idx, raw_results, sources_meta, tavily_answer, context, fetch_err = fetch_res
+            _, t_item, _, _ = post_configs[idx]
+            if fetch_err:
+                yield sse({"type": "post_error", "post_index": idx,
+                           "error": classify_error(fetch_err), "topic": t_item["title"]})
+            else:
+                web_data[idx] = (raw_results, sources_meta, context)
+                yield sse({"type": "web_fetched", "post_index": idx, "source_count": len(sources_meta)})
 
-                # ── Build prompt ─────────────────────────────────────────────
+        if not web_data:
+            yield sse({"type": "batch_done"})
+            return
+
+        # ── Phase B: Parallel LLM generation via shared asyncio.Queue ─────────
+        _DONE = object()
+        event_queue: asyncio.Queue = asyncio.Queue()
+        cfg_label = FRESHNESS_CONFIG.get(freshness, FRESHNESS_CONFIG["2days"])["label"]
+
+        async def _generate_post(idx: int, t_item: dict, sources_meta: list, context: str, angle: str, angle_note: str):
+            try:
                 d = get_date_strings()
                 angle_injection = (
                     f"\n\n--- CAMPAIGN DIRECTIVE ---\n"
-                    f"This is post {i + 1} of {len(topics)} in the '{category}' series.\n"
+                    f"This is post {idx + 1} of {len(topics)} in the '{category}' series.\n"
                     f"Assigned angle: {str(angle).upper().replace('_', ' ')}.\n"
                     f"Angle instruction: {angle_note}\n"
                     f"Series tone: {brief.get('series_tone', 'authoritative')}.\n"
@@ -1214,32 +1275,18 @@ class NvidiaRAG:
                 ])
                 chain = prompt | self.llm | StrOutputParser()
 
-                # ── Token streaming ──────────────────────────────────────────
                 full_text = ""
-                try:
-                    async for chunk in chain.astream(
-                        {"question": topic_item["title"], "context": context}
-                    ):
-                        full_text += chunk
-                        yield sse({"type": "post_chunk", "post_index": i, "text": chunk})
-                except asyncio.CancelledError:
-                    log.info("SSE stream cancelled during post %d.", i)
-                    raise
-                except Exception as e:
-                    log.error("LLM streaming failed for post %d: %s", i, e)
-                    yield sse({"type": "post_error", "post_index": i,
-                               "error": classify_error(e), "topic": topic_item["title"]})
-                    continue
+                async for chunk in chain.astream({"question": t_item["title"], "context": context}):
+                    full_text += chunk
+                    await event_queue.put(sse({"type": "post_chunk", "post_index": idx, "text": chunk}))
 
-                # ── Parse & save ─────────────────────────────────────────────
                 parsed        = parse_xml_response(full_text, field_ids)
                 parsed["raw"] = full_text
-                cfg_label     = FRESHNESS_CONFIG.get(freshness, FRESHNESS_CONFIG["2days"])["label"]
 
                 try:
                     post_id = await loop.run_in_executor(
                         None,
-                        lambda p=parsed, sm=sources_meta, ti=topic_item: _storage.save_post(
+                        lambda p=parsed, sm=sources_meta, ti=t_item: _storage.save_post(
                             ti["title"], "instagram", p, sm
                         )
                     )
@@ -1249,8 +1296,8 @@ class NvidiaRAG:
                 try:
                     await loop.run_in_executor(
                         None,
-                        lambda ti=topic_item, pid=post_id, ang=angle: _dedup.record_post(
-                            post_id    = pid or f"local_{i}",
+                        lambda ti=t_item, pid=post_id, ang=angle: _dedup.record_post(
+                            post_id    = pid or f"local_{idx}",
                             title      = ti["title"],
                             url        = ti.get("url", ""),
                             signature  = ti.get("_dedup_signature", ""),
@@ -1261,24 +1308,50 @@ class NvidiaRAG:
                 except Exception as _dedup_err:
                     log.warning("dedup record_post failed (non-fatal): %s", _dedup_err)
 
-                yield sse({
+                await event_queue.put(sse({
                     "type":           "post_completed",
-                    "post_index":     i,
+                    "post_index":     idx,
                     "angle":          angle,
                     "content":        parsed,
                     "sources":        sources_meta,
                     "freshness":      cfg_label,
-                    "original_topic": topic_item["title"],
-                    "source_url":     topic_item.get("url", ""),
+                    "original_topic": t_item["title"],
+                    "source_url":     t_item.get("url", ""),
                     "post_id":        post_id,
-                })
-                log.info("Post %d/%d completed.", i + 1, len(topics))
+                }))
+                log.info("Post %d/%d completed.", idx + 1, len(topics))
 
             except asyncio.CancelledError:
                 raise
             except Exception as e:
-                log.error("Unhandled error in post %d/%d: %s", i + 1, len(topics), e, exc_info=True)
-                yield sse({"type": "post_error", "post_index": i,
-                           "error": classify_error(e), "topic": topic_item["title"]})
+                log.error("Unhandled error in post %d/%d: %s", idx + 1, len(topics), e, exc_info=True)
+                await event_queue.put(sse({"type": "post_error", "post_index": idx,
+                                          "error": classify_error(e), "topic": t_item["title"]}))
+            finally:
+                await event_queue.put(_DONE)
+
+        gen_tasks = []
+        for idx, t_item, angle, angle_note in post_configs:
+            if idx not in web_data:
+                continue
+            _, sources_meta, context = web_data[idx]
+            gen_tasks.append(asyncio.create_task(
+                _generate_post(idx, t_item, sources_meta, context, angle, angle_note)
+            ))
+
+        # Drain queue until all tasks signal completion
+        done_count = 0
+        try:
+            while done_count < len(gen_tasks):
+                item = await event_queue.get()
+                if item is _DONE:
+                    done_count += 1
+                else:
+                    yield item
+        except asyncio.CancelledError:
+            for t in gen_tasks:
+                t.cancel()
+            log.info("SSE stream cancelled — all generation tasks cancelled.")
+            raise
 
         yield sse({"type": "batch_done"})

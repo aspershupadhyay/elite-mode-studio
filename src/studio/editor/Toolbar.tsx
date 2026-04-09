@@ -7,6 +7,7 @@ import { SaveIcon, FolderOpenIcon,
 import type { CanvasHandle, CanvasSize } from '@/types/canvas'
 import type { Template } from '@/types/domain'
 import { ExportPanel } from './ExportPanel'
+import type { ExportOptions } from './ExportPanel'
 
 // ── Inline save-name dialog (replaces broken prompt() in Electron) ─────────────
 interface SaveDialogProps {
@@ -101,7 +102,7 @@ export interface ToolbarProps {
   autoFormat?: boolean
   onAutoFormatToggle?: (enabled: boolean) => void
   pageCount?: number
-  onExportAllPages?: (opts: { format: import('./ExportPanel').ExportFormat; scale: number; quality: number; transparent: boolean; selectedPages?: number[] }) => void
+  onExportAllPages?: (opts: ExportOptions) => Promise<void>
 }
 
 export default function Toolbar({

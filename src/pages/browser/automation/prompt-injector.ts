@@ -23,8 +23,8 @@ export interface InjectResult {
  *  3. Legacy textarea fallback
  */
 export async function injectPrompt(prompt: string): Promise<InjectResult> {
-  // Prepare the prompt as a JSON array of characters for the in-page script
-  const chars = JSON.stringify(Array.from(prompt))
+  // Pass the full prompt as a JSON-escaped string for safe inline injection
+  const escapedPrompt = JSON.stringify(prompt)
 
   const script = `
     (async () => {
@@ -52,16 +52,7 @@ export async function injectPrompt(prompt: string): Promise<InjectResult> {
         return new Promise(r => setTimeout(r, ms))
       }
 
-      const chars = ${chars}
-
-      // Human-like delay: 50–130ms per char, occasional 200–600ms pauses
-      function typingDelay(i) {
-        const base = 50 + Math.random() * 80
-        const c = chars[i]
-        if (c === '.' || c === ',') return base + 100 + Math.random() * 150
-        if (i > 0 && i % 25 === 0) return base + 200 + Math.random() * 300
-        return base
-      }
+      const fullText = ${escapedPrompt}
 
       const el = findInput()
       if (!el) return { ok: false, method: 'failed', error: 'No input element found' }
@@ -79,30 +70,22 @@ export async function injectPrompt(prompt: string): Promise<InjectResult> {
         el.dispatchEvent(new Event('input', { bubbles: true }))
       }
 
-      await sleep(200)
+      await sleep(150)
 
       const isContentEditable = el.isContentEditable
 
-      for (let i = 0; i < chars.length; i++) {
-        const c = chars[i]
-
-        if (isContentEditable) {
-          // Use insertText so React/ProseMirror state updates with each keystroke
-          document.execCommand('insertText', false, c)
-        } else {
-          // For textarea: append char and fire synthetic input event
-          const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set
-          nativeSetter?.call(el, el.value + c)
-          el.dispatchEvent(new Event('input', { bubbles: true }))
-        }
-
-        // Simulate human typing delay
-        const delay = typingDelay(i, chars.length)
-        await sleep(delay)
+      // Insert the full prompt in one shot — character-by-character typing added
+      // 15-20s of unnecessary latency with no benefit inside an Electron window.
+      if (isContentEditable) {
+        document.execCommand('insertText', false, fullText)
+      } else {
+        const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set
+        nativeSetter?.call(el, fullText)
+        el.dispatchEvent(new Event('input', { bubbles: true }))
       }
 
-      // Brief pause before hitting send (like a human reviewing)
-      await sleep(400 + Math.random() * 400)
+      // Brief pause before hitting send
+      await sleep(400 + Math.random() * 300)
 
       const btn = findSendBtn()
       if (btn && !btn.disabled) {

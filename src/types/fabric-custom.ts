@@ -66,6 +66,12 @@ export interface EliteObjectProps {
   eliteHighlightStyle?: string
   /** Canvas globalCompositeOperation blend mode */
   eliteBlendMode?: string
+  /** Gradient overlay: hex color (default '#111111') */
+  eliteGradColor?: string
+  /** Gradient overlay: direction key — 'tb' | 'bt' | 'lr' | 'rl' | 'tlbr' | 'trbl' | 'bltr' | 'brtl' */
+  eliteGradDir?: string
+  /** Gradient overlay: opacity of the solid end, 0-1 (default 1) */
+  eliteGradStrength?: number
 }
 
 declare module 'fabric' {

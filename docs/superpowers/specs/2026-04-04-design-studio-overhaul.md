@@ -544,3 +544,4 @@ Figma-style panel triggered from toolbar — clean, not a clunky dialog.
 - Cloud template storage
 - Video/animation export
 - AI auto-layout suggestions
+

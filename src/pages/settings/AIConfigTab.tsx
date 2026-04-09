@@ -1,193 +1,356 @@
-import { T, Icons, SectionHeader, Card, CardRow, SelectChip, FieldInput, PrimaryBtn, StatusPill } from './shared'
+/**
+ * AIConfigTab.tsx — AI Models
+ * Clean layout: provider tabs (filter + key management) → model list → detail panel.
+ */
 
-// ── Model lists ───────────────────────────────────────────────────────────────
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { apiFetch, apiPost } from '../../api'
+import ModelBrowser from './ModelBrowser'
+import ModelDetailPanel from './ModelDetailPanel'
+import type { ModelDef, ProviderDef, FeatureConfig } from './model-types'
+import { PROVIDER_COLORS, TIER_META } from './model-types'
 
-interface ModelDef {
-  value: string
-  label: string
-  badge: string
+const T = {
+  bg:     'var(--bg)',
+  bg2:    'var(--bg2)',
+  bg3:    'var(--bg3)',
+  bg4:    'var(--bg4)',
+  border: 'var(--border)',
+  text:   'var(--text)',
+  text2:  'var(--text2)',
+  text3:  'var(--text3)',
+  accent: 'var(--accent, #C96A42)',
+  green:  'var(--green, #34d399)',
+  amber:  '#f59e0b',
+  red:    'var(--red, #f87171)',
 }
 
-const LLM_MODELS: ModelDef[] = [
-  { value: 'meta/llama-3.3-70b-instruct',     label: 'Llama 3.3 70B',   badge: 'Recommended' },
-  { value: 'meta/llama-3.1-405b-instruct',    label: 'Llama 3.1 405B',  badge: 'Powerful'    },
-  { value: 'mistralai/mixtral-8x22b-instruct',label: 'Mixtral 8×22B',   badge: 'Fast'        },
-  { value: 'nvidia/nemotron-4-340b-instruct',  label: 'Nemotron 340B',   badge: 'NVIDIA'      },
-]
+const FREE_PROVIDERS = new Set(['nvidia', 'ollama'])
 
-const EMBED_MODELS: ModelDef[] = [
-  { value: 'nvidia/llama-3.2-nv-embedqa-1b-v2', label: 'NV EmbedQA 1B v2', badge: 'Default' },
-  { value: 'nvidia/nv-embed-v2',                label: 'NV Embed v2',       badge: 'Larger'  },
-]
+// ── Provider tab strip ─────────────────────────────────────────────────────────
 
-const RERANK_MODELS: ModelDef[] = [
-  { value: 'nvidia/llama-nemotron-rerank-1b-v2', label: 'Nemotron Rerank 1B', badge: 'Default' },
-]
-
-const TOKEN_OPTIONS = [
-  { value: '1024', label: '1K' },
-  { value: '2048', label: '2K' },
-  { value: '4096', label: '4K' },
-  { value: '8192', label: '8K' },
-]
-
-// ── SearchCfg sub-type we need ────────────────────────────────────────────────
-
-interface NvidiaConfig {
-  llm_model?: string
-  embed_model?: string
-  rerank_model?: string
-  max_tokens?: number
-}
-
-interface SearchCfgSlice {
-  nvidia?: NvidiaConfig
-}
-
-// ── Props ─────────────────────────────────────────────────────────────────────
-
-export interface AIConfigTabProps {
-  nvKey: string
-  setNvKey: (v: string) => void
-  nvKeySet: boolean
-  searchCfg: SearchCfgSlice
-  setSearchCfg: (updater: (prev: SearchCfgSlice) => SearchCfgSlice) => void
-  onSaveKeys: () => void
-  savingKeys: boolean
-  savedKeys: boolean
-  onTest: () => void
-}
-
-// ── Sub-component ─────────────────────────────────────────────────────────────
-
-function ModelCard({
-  label,
-  models,
-  value,
-  onChange,
+function ProviderTabs({
+  providers, modelCounts, selected, onSelect,
 }: {
-  label: string
-  models: ModelDef[]
-  value: string
-  onChange: (v: string) => void
-}): React.ReactElement {
+  providers:   Record<string, ProviderDef>
+  modelCounts: Record<string, number>
+  selected:    string
+  onSelect:    (pid: string) => void
+}) {
+  const sorted = ['all', ...Object.keys(providers).sort((a, b) => {
+    // free providers first
+    const af = FREE_PROVIDERS.has(a) || !providers[a]?.env_key
+    const bf = FREE_PROVIDERS.has(b) || !providers[b]?.env_key
+    if (af && !bf) return -1
+    if (!af && bf) return 1
+    // then unlocked
+    const au = providers[a]?.key_set
+    const bu = providers[b]?.key_set
+    if (au && !bu) return -1
+    if (!au && bu) return 1
+    return 0
+  })]
+
+  function label(pid: string) {
+    if (pid === 'all') return 'All'
+    return providers[pid]?.name || pid
+  }
+
+  function status(pid: string) {
+    if (pid === 'all') return 'all'
+    if (FREE_PROVIDERS.has(pid) || !providers[pid]?.env_key) return 'free'
+    if (providers[pid]?.key_set) return 'unlocked'
+    return 'locked'
+  }
+
   return (
-    <div style={{ marginBottom: 20 }}>
-      <p style={{
-        fontSize: 11, color: T.text2, fontWeight: 600, textTransform: 'uppercase',
-        letterSpacing: '.06em', marginBottom: 10,
-      }}>{label}</p>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        {models.map(m => (
-          <div key={m.value} onClick={() => onChange(m.value)} style={{
-            display: 'flex', alignItems: 'center', gap: 12, padding: '11px 14px',
-            borderRadius: 10, cursor: 'pointer', transition: 'all .15s',
-            border: `1px solid ${value === m.value ? T.violet : T.border}`,
-            background: value === m.value ? T.violetBg : T.bg,
-          }}>
-            <div style={{
-              width: 16, height: 16, borderRadius: '50%', flexShrink: 0,
-              border: `2px solid ${value === m.value ? T.violet : T.border2}`,
-              background: value === m.value ? T.violet : 'transparent',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}>
-              {value === m.value && (
-                <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#fff' }} />
-              )}
-            </div>
-            <div style={{ flex: 1 }}>
-              <p style={{ fontSize: 13, color: value === m.value ? T.violetL : T.text, margin: 0 }}>{m.label}</p>
-              <p style={{ fontSize: 10, color: T.text3, fontFamily: 'monospace', marginTop: 2 }}>{m.value}</p>
-            </div>
-            <span style={{
-              fontSize: 10, padding: '2px 8px', borderRadius: 20, fontWeight: 500,
-              background: value === m.value ? T.violetBg : T.bg4,
-              border: `1px solid ${value === m.value ? T.violetBd : T.border}`,
-              color: value === m.value ? T.violetL : T.text3,
-            }}>{m.badge}</span>
-          </div>
-        ))}
-      </div>
+    <div style={{
+      display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2,
+      scrollbarWidth: 'none',
+    }}>
+      {sorted.map(pid => {
+        const st      = status(pid)
+        const active  = selected === pid
+        const color   = pid === 'all' ? T.accent : (PROVIDER_COLORS[pid] || '#94a3b8')
+        const count   = pid === 'all' ? undefined : modelCounts[pid]
+
+        return (
+          <button
+            key={pid}
+            onClick={() => onSelect(pid)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              padding: '6px 12px', borderRadius: 8, border: 'none',
+              flexShrink: 0, cursor: 'pointer', fontSize: 12,
+              fontWeight: active ? 600 : 400,
+              background: active ? `${color}18` : 'transparent',
+              color:      active ? color : T.text2,
+              outline:    active ? `1px solid ${color}40` : '1px solid transparent',
+              transition: 'all .12s',
+            }}
+          >
+            {/* Status indicator */}
+            {pid !== 'all' && (
+              <span style={{
+                width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
+                background: st === 'free' ? T.green
+                          : st === 'unlocked' ? T.green
+                          : T.amber,
+              }} />
+            )}
+
+            {label(pid)}
+
+            {/* FREE / count badge */}
+            {st === 'free' && pid !== 'all' && (
+              <span style={{
+                fontSize: 8, fontWeight: 700, padding: '1px 5px',
+                borderRadius: 3, background: `${T.green}20`, color: T.green,
+              }}>FREE</span>
+            )}
+            {count !== undefined && (
+              <span style={{
+                fontSize: 10, color: active ? color : T.text3,
+                fontVariantNumeric: 'tabular-nums',
+              }}>{count}</span>
+            )}
+          </button>
+        )
+      })}
     </div>
   )
 }
 
-// ── Tab ───────────────────────────────────────────────────────────────────────
+// ── Inline key banner (shown when locked provider is selected) ─────────────────
 
-export default function AIConfigTab({
-  nvKey,
-  setNvKey,
-  nvKeySet,
-  searchCfg,
-  setSearchCfg,
-  onSaveKeys,
-  savingKeys,
-  savedKeys,
-  onTest,
-}: AIConfigTabProps): React.ReactElement {
-  const nv = searchCfg.nvidia || {}
-  const setNv = (patch: Partial<NvidiaConfig>): void =>
-    setSearchCfg(prev => ({ ...prev, nvidia: { ...prev.nvidia, ...patch } }))
+function KeyBanner({
+  pid, pdata, onSaved,
+}: {
+  pid:    string
+  pdata:  ProviderDef
+  onSaved: () => void
+}) {
+  const [key,    setKey]    = useState('')
+  const [saving, setSaving] = useState(false)
+  const [saved,  setSaved]  = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => { inputRef.current?.focus() }, [pid])
+
+  async function save() {
+    if (!key.trim()) return
+    setSaving(true)
+    await apiPost('/api/provider-key', { provider: pid, api_key: key.trim() })
+    setKey(''); setSaving(false); setSaved(true)
+    setTimeout(() => { setSaved(false); onSaved() }, 1200)
+  }
+
+  if (pdata.key_set || FREE_PROVIDERS.has(pid) || !pdata.env_key) return null
 
   return (
-    <div>
-      <SectionHeader
-        icon={Icons.cpu}
-        title="AI Models"
-        subtitle="NVIDIA NIM model configuration — choose the right balance of speed and quality"
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 10,
+      padding: '10px 14px', borderRadius: 10,
+      background: `${T.amber}0a`, border: `1px solid ${T.amber}30`,
+    }}>
+      <span style={{ fontSize: 16 }}>🔑</span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <p style={{ fontSize: 12, color: T.text, fontWeight: 600, margin: '0 0 1px' }}>
+          Add {pdata.name} API key
+        </p>
+        <p style={{ fontSize: 10, color: T.text3, margin: 0, fontFamily: 'monospace' }}>
+          {pdata.env_key}
+        </p>
+      </div>
+      <input
+        ref={inputRef}
+        type="password"
+        value={key}
+        onChange={e => setKey(e.target.value)}
+        onKeyDown={e => e.key === 'Enter' && save()}
+        placeholder="Paste key and press Enter…"
+        style={{
+          width: 260, padding: '7px 11px', borderRadius: 8,
+          border: `1px solid ${T.border}`, background: T.bg3,
+          color: T.text, fontSize: 12, outline: 'none',
+        }}
+      />
+      <button
+        onClick={save}
+        disabled={!key.trim() || saving}
+        style={{
+          padding: '7px 16px', borderRadius: 8, border: 'none',
+          background: saved ? T.green : T.accent, color: '#fff',
+          fontSize: 12, fontWeight: 600, cursor: 'pointer',
+          opacity: key.trim() ? 1 : 0.4, flexShrink: 0, minWidth: 72,
+          transition: 'background .2s',
+        }}
+      >
+        {saved ? 'Saved ✓' : saving ? '…' : 'Save'}
+      </button>
+    </div>
+  )
+}
+
+// ── Main ──────────────────────────────────────────────────────────────────────
+
+export default function AIConfigTab() {
+  const [models,         setModels]         = useState<ModelDef[]>([])
+  const [providers,      setProviders]      = useState<Record<string, ProviderDef>>({})
+  const [features,       setFeatures]       = useState<string[]>([])
+  const [featureConfigs, setFeatureConfigs] = useState<Record<string, FeatureConfig>>({})
+  const [selected,       setSelected]       = useState<ModelDef | null>(null)
+  const [loading,        setLoading]        = useState(true)
+  const [activeProvider, setActiveProvider] = useState('all')
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    const [modelsRes, providersRes, cfgRes] = await Promise.all([
+      apiFetch<{ models: ModelDef[] }>('/api/models'),
+      apiFetch<{ providers: Record<string, ProviderDef>; features: string[] }>('/api/providers'),
+      apiFetch<{ llm_features: Record<string, FeatureConfig>; features: string[] }>('/api/llm-config'),
+    ])
+    if (modelsRes.data?.models)       setModels(modelsRes.data.models)
+    if (providersRes.data?.providers) setProviders(providersRes.data.providers)
+    if (providersRes.data?.features)  setFeatures(providersRes.data.features)
+    if (cfgRes.data?.llm_features)    setFeatureConfigs(cfgRes.data.llm_features)
+    if (cfgRes.data?.features)        setFeatures(cfgRes.data.features)
+    setLoading(false)
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  function handleConfigSaved(feature: string, cfg: FeatureConfig) {
+    setFeatureConfigs(prev => ({ ...prev, [feature]: cfg }))
+  }
+
+  const modelCounts = Object.keys(providers).reduce<Record<string, number>>((acc, pid) => {
+    acc[pid] = models.filter(m => m.provider === pid).length
+    return acc
+  }, {})
+
+  // Filter models by active provider tab
+  const filteredByProvider = activeProvider === 'all'
+    ? models
+    : models.filter(m => m.provider === activeProvider)
+
+  const selectedProvider = activeProvider !== 'all' ? providers[activeProvider] ?? null : null
+  const showKeyBanner = selectedProvider && !selectedProvider.key_set
+    && !FREE_PROVIDERS.has(activeProvider) && !!selectedProvider.env_key
+
+  const unlockedCount = Object.entries(providers).filter(([pid, p]) =>
+    FREE_PROVIDERS.has(pid) || !p.env_key || p.key_set
+  ).length
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center',
+        height: 300, gap: 8 }}>
+        {[0, 1, 2].map(i => (
+          <div key={i} style={{
+            width: 7, height: 7, borderRadius: '50%',
+            background: T.accent, animation: 'pulse 1.2s infinite',
+            animationDelay: `${i * 0.2}s`,
+          }} />
+        ))}
+        <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:.2}}`}</style>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{
+      height: 'calc(100vh - 56px)',
+      display: 'flex', flexDirection: 'column', gap: 12,
+    }}>
+
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div>
+          <h2 style={{ fontSize: 16, fontWeight: 700, color: T.text, margin: '0 0 3px' }}>
+            AI Models
+          </h2>
+          <p style={{ fontSize: 12, color: T.text3, margin: 0 }}>
+            {models.length} models &nbsp;·&nbsp;
+            <span style={{ color: T.green }}>{unlockedCount} provider{unlockedCount !== 1 ? 's' : ''} unlocked</span>
+            &nbsp;·&nbsp; select a provider to add its key
+          </p>
+        </div>
+        <button
+          onClick={load}
+          style={{
+            padding: '6px 12px', borderRadius: 8,
+            border: `1px solid ${T.border}`, background: 'transparent',
+            color: T.text3, fontSize: 11, cursor: 'pointer',
+          }}
+        >
+          Refresh
+        </button>
+      </div>
+
+      {/* Provider tabs */}
+      <ProviderTabs
+        providers={providers}
+        modelCounts={modelCounts}
+        selected={activeProvider}
+        onSelect={pid => { setActiveProvider(pid); setSelected(null) }}
       />
 
-      <Card>
-        <p style={{ fontSize: 12, fontWeight: 600, color: T.text, marginBottom: 14 }}>API Credentials</p>
-        <FieldInput
-          label="NVIDIA API Key"
-          value={nvKey}
-          onChange={setNvKey}
-          type="password"
-          placeholder={nvKeySet ? 'Key saved - paste a new one to replace' : 'nvapi-xxxxxxxxxxxx'}
-          hint="Get yours at build.nvidia.com - powers all three model roles below"
-        />
-        <div style={{ display: 'flex', gap: 8 }}>
-          <PrimaryBtn onClick={onSaveKeys} loading={savingKeys}>
-            <Icons.check size={13} />
-            {savedKeys ? 'Saved!' : 'Save API Key'}
-          </PrimaryBtn>
-          <PrimaryBtn onClick={onTest} small>
-            <Icons.refresh size={12} />Test Connection
-          </PrimaryBtn>
-        </div>
-      </Card>
+      {/* Inline key banner */}
+      {showKeyBanner && selectedProvider && (
+        <KeyBanner pid={activeProvider} pdata={selectedProvider} onSaved={load} />
+      )}
 
-      <Card>
-        <ModelCard
-          label="Language Model (content generation)"
-          models={LLM_MODELS}
-          value={nv.llm_model || LLM_MODELS[0].value}
-          onChange={v => setNv({ llm_model: v })}
-        />
-        <ModelCard
-          label="Embeddings Model (document search)"
-          models={EMBED_MODELS}
-          value={nv.embed_model || EMBED_MODELS[0].value}
-          onChange={v => setNv({ embed_model: v })}
-        />
-        <ModelCard
-          label="Reranking Model (result quality)"
-          models={RERANK_MODELS}
-          value={nv.rerank_model || RERANK_MODELS[0].value}
-          onChange={v => setNv({ rerank_model: v })}
-        />
-      </Card>
-
-      <Card>
-        <CardRow label="Max Output Tokens" desc="Longer = richer output, slower response" noBorder>
-          <SelectChip
-            options={TOKEN_OPTIONS}
-            value={String(nv.max_tokens || 4096)}
-            onChange={v => setNv({ max_tokens: parseInt(v) })}
+      {/* Model browser + detail */}
+      <div style={{
+        flex: 1, display: 'grid', gap: 12, overflow: 'hidden', minHeight: 0,
+        gridTemplateColumns: selected ? '1fr 340px' : '1fr',
+      }}>
+        {/* Browser */}
+        <div style={{
+          overflow: 'hidden', display: 'flex', flexDirection: 'column',
+          background: T.bg2, borderRadius: 12, border: `1px solid ${T.border}`,
+          padding: 14,
+        }}>
+          <ModelBrowser
+            models={filteredByProvider}
+            providers={providers}
+            features={features}
+            featureConfigs={featureConfigs}
+            selectedId={selected?.id ?? null}
+            onSelect={setSelected}
+            hideProviderFilter
           />
-        </CardRow>
-      </Card>
+        </div>
+
+        {/* Detail panel */}
+        {selected && (
+          <div style={{
+            overflowY: 'auto', overflowX: 'hidden',
+            background: T.bg2, borderRadius: 12, border: `1px solid ${T.border}`,
+            padding: 14,
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between',
+              alignItems: 'center', marginBottom: 12 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: T.text3,
+                textTransform: 'uppercase', letterSpacing: '.07em' }}>
+                Model details
+              </span>
+              <button onClick={() => setSelected(null)} style={{
+                background: 'none', border: 'none', color: T.text3,
+                fontSize: 18, cursor: 'pointer', lineHeight: 1, padding: '0 4px',
+              }}>×</button>
+            </div>
+            <ModelDetailPanel
+              model={selected}
+              provider={providers[selected.provider] ?? null}
+              features={features}
+              featureConfigs={featureConfigs}
+              onConfigSaved={handleConfigSaved}
+            />
+          </div>
+        )}
+      </div>
     </div>
   )
 }

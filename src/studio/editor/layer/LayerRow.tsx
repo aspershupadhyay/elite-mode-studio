@@ -105,7 +105,7 @@ export function LayerRow({
         'cursor-pointer select-none group relative',
         isSelected
           ? 'bg-accent/10 border-l-[2px] border-accent'
-          : 'border-l-[2px] border-transparent hover:bg-white/[0.04]',
+          : 'border-l-[2px] border-transparent layer-row-hover',
         isDragOver ? 'outline outline-1 outline-accent/50' : '',
       ].join(' ')}
     >

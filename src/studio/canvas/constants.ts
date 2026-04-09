@@ -33,6 +33,8 @@ export const ELITE_CUSTOM_PROPS: string[] = [
   'eliteTextFillMode', 'eliteGradientFill', 'eliteTextureFill', 'eliteSolidFill',
   // Effects
   'eliteBlendMode',
+  // Gradient overlay config
+  'eliteGradColor', 'eliteGradDir', 'eliteGradStrength',
 ]
 
 // ── Accent colour (theme-aware) ───────────────────────────────────────────────
