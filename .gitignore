@@ -80,3 +80,6 @@ release/
 # ── PyInstaller backend binary ─────────────────────────────────────────────────
 backend/dist/
 backend/build/
+backend/.venv-build/
+backend/.pyinstaller_cache/
+backend/api.spec
