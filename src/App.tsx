@@ -152,7 +152,7 @@ function BackendBanner({ status }: BackendBannerProps): React.ReactElement | nul
       letterSpacing: '0.01em',
     }}>
       {isDown
-        ? 'Backend offline — run: cd backend && python3 api.py'
+        ? 'Backend offline — please restart the app'
         : 'Backend degraded — check API keys in Settings'}
     </div>
   )
@@ -277,10 +277,28 @@ export default function App(): React.ReactElement {
   }, [])
 
   useEffect(() => {
-    void apiFetch('/api/health').then(({ data, error }) => {
-      if (error) { setStatus('down'); return }
+    let cancelled = false
+    let attempts = 0
+    const MAX_ATTEMPTS = 25  // 25 x 2s = 50s total wait for PyInstaller cold start
+
+    async function check(): Promise<void> {
+      if (cancelled) return
+      const { data, error } = await apiFetch<HealthApiResponse>('/api/health')
+      if (cancelled) return
+      attempts++
+      if (error) {
+        if (attempts < MAX_ATTEMPTS) {
+          setTimeout(() => void check(), 2000)
+        } else {
+          setStatus('down')
+        }
+        return
+      }
       setStatus((data as HealthApiResponse)?.missing_keys?.length ? 'degraded' : 'ok')
-    })
+    }
+
+    void check()
+    return () => { cancelled = true }
   }, [])
 
   const handleLoadTemplate = (templateData: LoadTemplatePayload): void => {

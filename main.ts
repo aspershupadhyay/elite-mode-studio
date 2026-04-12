@@ -86,7 +86,7 @@ async function startBackend(): Promise<void> {
   backendProcess.stderr?.on('data', (d: Buffer) => console.error('[backend]', d.toString()))
 }
 
-function waitForBackend(timeoutMs = 10_000): Promise<void> {
+function waitForBackend(timeoutMs = 45_000): Promise<void> {
   return new Promise((resolve) => {
     const start = Date.now()
     function attempt(): void {
