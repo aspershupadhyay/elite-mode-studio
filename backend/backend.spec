@@ -16,7 +16,7 @@ for pkg in [
     'langchain', 'langchain_community', 'langchain_nvidia_ai_endpoints',
     'langchain_core', 'langchain_text_splitters',
     'faiss', 'pypdf', 'multipart', 'PIL',
-    'tavily', 'tiktoken',
+    'tavily', 'tiktoken', 'certifi', 'dotenv',
 ]:
     try:
         d, b, hi = collect_all(pkg)
@@ -36,11 +36,13 @@ a = Analysis(
     binaries=binaries,
     datas=datas,
     hiddenimports=hidden + [
+        # uvicorn internals
         'uvicorn.lifespan.on',
         'uvicorn.protocols.http.h11_impl',
         'uvicorn.protocols.http.httptools_impl',
         'uvicorn.protocols.websockets.auto',
         'uvicorn.loops.asyncio',
+        # stdlib
         'asyncio',
         'sqlite3',
         '_sqlite3',
@@ -49,6 +51,25 @@ a = Analysis(
         'numpy',
         'numpy.core._methods',
         'numpy.lib.format',
+        # Local backend modules — uvicorn.run('api:app') is a string import,
+        # so PyInstaller cannot trace these automatically.
+        'api',
+        'rag',
+        'config',
+        'database',
+        'storage',
+        'auth',
+        'auth_db',
+        'image_agent',
+        'llm_factory',
+        'model_discovery',
+        'model_registry',
+        'providers',
+        'dedup',
+        'dedup_store',
+        'dedup_gate1',
+        'dedup_gate2',
+        'dedup_gate3',
     ],
     hookspath=[],
     runtime_hooks=[],

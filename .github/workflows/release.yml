@@ -29,6 +29,9 @@ jobs:
         working-directory: backend
         run: pyinstaller backend.spec
 
+      - name: Make backend binary executable
+        run: chmod +x backend/dist/api_server/api_server
+
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
@@ -109,6 +112,9 @@ jobs:
       - name: Build backend binary
         working-directory: backend
         run: pyinstaller backend.spec
+
+      - name: Make backend binary executable
+        run: chmod +x backend/dist/api_server/api_server
 
       - uses: actions/setup-node@v4
         with:

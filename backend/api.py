@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from typing import Optional, List
 import tempfile, os, logging, asyncio
 from rag import NvidiaRAG, TRENDING_QUERIES, FRESHNESS_CONFIG, classify_error, load_search_config, save_search_config, DOCS_DIR
-from config import NVIDIA_API_KEY, TAVILY_API_KEY, LLM_MODEL, EMBED_MODEL, RERANK_MODEL
+from config import NVIDIA_API_KEY, TAVILY_API_KEY, LLM_MODEL, EMBED_MODEL, RERANK_MODEL, DATA_DIR
 from dotenv import load_dotenv, set_key
 import storage
 import database
@@ -191,7 +191,7 @@ def get_settings():
 @app.post("/api/settings")
 def save_settings(body: SettingsBody):
     global pipeline
-    env_path = os.path.join(os.path.dirname(__file__), ".env")
+    env_path = str(DATA_DIR / ".env")
     if body.nvidia_api_key:
         set_key(env_path, "NVIDIA_API_KEY", body.nvidia_api_key)
     if body.tavily_api_key:
@@ -633,8 +633,8 @@ def attach_post_image(post_id: str, body: dict):
     tmp_path = body.get("tmp_path", "")
     if not tmp_path or not os.path.exists(tmp_path):
         raise HTTPException(status_code=400, detail="Image file not found")
-    # Copy to backend/data/images/
-    images_dir = os.path.join(os.path.dirname(__file__), "data", "images")
+    # Copy to user data images dir
+    images_dir = str(DATA_DIR / "images")
     os.makedirs(images_dir, exist_ok=True)
     ext = os.path.splitext(tmp_path)[1] or ".png"
     dest = os.path.join(images_dir, f"{post_id}{ext}")
@@ -957,7 +957,7 @@ def save_provider_key(body: ProviderKeyBody):
     env_key = PROVIDERS[body.provider].get("env_key")
     if not env_key:
         raise HTTPException(status_code=400, detail=f"'{body.provider}' needs no API key.")
-    env_path = os.path.join(os.path.dirname(__file__), ".env")
+    env_path = str(DATA_DIR / ".env")
     set_key(env_path, env_key, body.api_key.strip())
     load_dotenv(env_path, override=True)
     if pipeline is not None:

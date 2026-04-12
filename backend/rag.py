@@ -47,7 +47,7 @@ from pypdf import PdfReader
 from datetime import datetime, timedelta
 import re, time, logging, json, asyncio, itertools
 
-from config import NVIDIA_API_KEY, TAVILY_API_KEY, LLM_MODEL, EMBED_MODEL, RERANK_MODEL
+from config import NVIDIA_API_KEY, TAVILY_API_KEY, LLM_MODEL, EMBED_MODEL, RERANK_MODEL, DATA_DIR
 import database as _db
 
 # ── aiohttp nuclear patch (runs AFTER aiohttp is imported via LangChain deps) ──
@@ -76,8 +76,8 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 # In dev it's the backend/ directory — resolves to repo root one level up.
 _creatoros_base = os.environ.get('CREATOROS_BASE', os.path.join(os.path.dirname(__file__), '..'))
 DOCS_DIR        = os.path.join(_creatoros_base, 'docs')
-CONFIG_PATH       = os.path.join(os.path.dirname(__file__), "search_config.json")
-FAISS_INDEX_PATH  = os.path.join(os.path.dirname(__file__), "data", "faiss_index")
+CONFIG_PATH       = os.path.join(DATA_DIR, "search_config.json")
+FAISS_INDEX_PATH  = os.path.join(DATA_DIR, "faiss_index")
 MAX_CONTEXT_CHARS = 16_000
 
 # ── Load / save search config ─────────────────────────────────────────────────
