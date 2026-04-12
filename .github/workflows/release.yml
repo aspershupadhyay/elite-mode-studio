@@ -1,16 +1,16 @@
-name: Release — All Platforms
+name: Release
 
 on:
   push:
     tags:
-      - 'v*.*.*'
+      - 'v*'
 
 permissions:
   contents: write
 
 jobs:
-  # ── macOS ────────────────────────────────────────────────────────────────
-  release-mac:
+  # ── macOS (arm64 + x64) ─────────────────────────────────────────────────────
+  build-mac:
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
@@ -19,40 +19,43 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install Python deps + PyInstaller
-        working-directory: backend
+      - name: Install Python deps & PyInstaller
         run: |
-          pip install pyinstaller
+          cd backend
+          pip install --upgrade pip
           pip install -r requirements.txt
+          pip install pyinstaller
 
-      - name: Build backend binary
-        working-directory: backend
-        run: pyinstaller backend.spec
-
-      - name: Make backend binary executable
-        run: chmod +x backend/dist/api_server/api_server
+      - name: Build backend binary (arm64)
+        run: cd backend && python -m PyInstaller backend.spec -y
 
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
 
-      - run: npm ci
+      - name: Install Node deps
+        run: npm ci
 
-      - name: Build frontend
-        run: npm run build
+      - name: Build frontend + Electron
+        run: npm run build && npm run build:electron
 
-      - name: Package DMG
-        run: npx electron-builder --mac --publish never
+      - name: Strip xattrs (prevents codesign resource-fork error)
+        run: xattr -cr backend/dist/api_server || true
 
-      - name: Upload DMG to release
-        uses: softprops/action-gh-release@v2
+      - name: Package macOS DMG (arm64)
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+        run: npx electron-builder --mac --arm64
+
+      - name: Upload mac artifacts
+        uses: actions/upload-artifact@v4
         with:
-          files: release/*.dmg
-          token: ${{ secrets.GITHUB_TOKEN }}
+          name: mac-dmg
+          path: release/*.dmg
 
-  # ── Windows ──────────────────────────────────────────────────────────────
-  release-win:
+  # ── Windows ─────────────────────────────────────────────────────────────────
+  build-windows:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -61,37 +64,40 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install Python deps + PyInstaller
-        working-directory: backend
+      - name: Install Python deps & PyInstaller
         run: |
-          pip install pyinstaller
+          cd backend
+          pip install --upgrade pip
           pip install -r requirements.txt
+          pip install pyinstaller
 
       - name: Build backend binary
-        working-directory: backend
-        run: pyinstaller backend.spec
+        run: cd backend && python -m PyInstaller backend.spec -y
 
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
 
-      - run: npm ci
+      - name: Install Node deps
+        run: npm ci
 
-      - name: Build frontend
-        run: npm run build
+      - name: Build frontend + Electron
+        run: npm run build && npm run build:electron
 
-      - name: Package NSIS installer
-        run: npx electron-builder --win --publish never
+      - name: Package Windows installer
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+        run: npx electron-builder --win
 
-      - name: Upload EXE to release
-        uses: softprops/action-gh-release@v2
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
         with:
-          files: release/*.exe
-          token: ${{ secrets.GITHUB_TOKEN }}
+          name: windows-installer
+          path: release/*.exe
 
-  # ── Linux ─────────────────────────────────────────────────────────────────
-  release-linux:
+  # ── Linux ────────────────────────────────────────────────────────────────────
+  build-linux:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -100,37 +106,79 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install system libs for faiss / pillow / numpy
-        run: sudo apt-get install -y libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1
-
-      - name: Install Python deps + PyInstaller
-        working-directory: backend
+      - name: Install system deps
         run: |
-          pip install pyinstaller
+          sudo apt-get update -qq
+          sudo apt-get install -y libfuse2 fuse libgtk-3-dev libnotify-dev libnss3-dev libxss1 libxtst6 xauth xvfb python3-dev gcc g++ make
+
+      - name: Install Python deps & PyInstaller
+        run: |
+          cd backend
+          pip install --upgrade pip
           pip install -r requirements.txt
+          pip install pyinstaller
 
       - name: Build backend binary
-        working-directory: backend
-        run: pyinstaller backend.spec
-
-      - name: Make backend binary executable
-        run: chmod +x backend/dist/api_server/api_server
+        run: cd backend && python -m PyInstaller backend.spec -y
 
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
 
-      - run: npm ci
+      - name: Install Node deps
+        run: npm ci
 
-      - name: Build frontend
-        run: npm run build
+      - name: Build frontend + Electron
+        run: npm run build && npm run build:electron
 
-      - name: Package AppImage
-        run: npx electron-builder --linux --publish never
+      - name: Package Linux AppImage
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+        run: npx electron-builder --linux
 
-      - name: Upload AppImage to release
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-appimage
+          path: release/*.AppImage
+
+  # ── GitHub Release ───────────────────────────────────────────────────────────
+  publish:
+    needs: [build-mac, build-windows, build-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: release/*.AppImage
-          token: ${{ secrets.GITHUB_TOKEN }}
+          name: CreatorOS ${{ github.ref_name }}
+          body: |
+            ## CreatorOS ${{ github.ref_name }}
+
+            ### Download
+
+            | Platform | File | Notes |
+            |----------|------|-------|
+            | macOS Apple Silicon | `*-arm64.dmg` | M1/M2/M3/M4 Mac |
+            | Windows | `*.exe` | Windows 10/11 x64 |
+            | Linux | `*.AppImage` | Any Linux x64 |
+
+            ### First launch
+            1. Open the app
+            2. Go to **Settings** and paste your API keys:
+               - [NVIDIA NIM API key](https://build.nvidia.com) — free tier available
+               - [Tavily Search API key](https://app.tavily.com) — free tier available
+            3. All AI features unlock instantly, no restart needed.
+
+            > **macOS:** If blocked, right-click the app → Open → Open anyway.
+            > **Linux:** `chmod +x CreatorOS-*.AppImage` then run it.
+          files: |
+            artifacts/**/*.dmg
+            artifacts/**/*.exe
+            artifacts/**/*.AppImage
+          draft: false
+          prerelease: false

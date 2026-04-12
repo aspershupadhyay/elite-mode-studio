@@ -1,13 +1,13 @@
 {
   "name": "creator-os",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "CreatorOS — AI-powered social media content & design automation",
   "author": "Sparsh Upadhyay",
   "main": "main.js",
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build:electron": "tsc -p tsconfig.electron.json",
-    "build:backend": "cd backend && pyinstaller backend.spec",
+    "build:backend": "cd backend && pyinstaller backend.spec -y",
     "generate-icons": "node scripts/generate-icons.js",
     "dev": "npm run build:electron && concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
     "build": "npm run build:electron && vite build",

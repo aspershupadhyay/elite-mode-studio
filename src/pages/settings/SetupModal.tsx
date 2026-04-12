@@ -1,9 +1,10 @@
 /**
  * SetupModal.tsx — First-run API key setup overlay.
  * Shown when the backend reports missing keys on first launch.
- * Non-dismissable until keys are saved (or user skips).
+ * Skippable — user can enter keys later in Settings.
  */
 import React, { useState } from 'react'
+import { apiPost } from '../../api'
 
 interface Props {
   missingKeys: string[]
@@ -24,15 +25,15 @@ export default function SetupModal({ missingKeys, onComplete }: Props): React.Re
   async function handleSave(): Promise<void> {
     setSaving(true)
     setError('')
-    try {
-      const result = await window.api.setupSaveConfig({ nvidiaKey, tavilyKey })
-      if (result.ok) { onComplete() }
-      else { setError(result.error ?? 'Failed to save. Please try again.') }
-    } catch (e) {
-      setError(String(e))
-    } finally {
-      setSaving(false)
-    }
+    // Call the backend settings endpoint directly — it saves to the correct
+    // DATA_DIR path and reinitialises the pipeline immediately (no restart needed).
+    const { error: apiError } = await apiPost('/api/settings', {
+      nvidia_api_key: nvidiaKey.trim() || undefined,
+      tavily_api_key: tavilyKey.trim() || undefined,
+    })
+    setSaving(false)
+    if (apiError) { setError(apiError); return }
+    onComplete()
   }
 
   const inputStyle: React.CSSProperties = {

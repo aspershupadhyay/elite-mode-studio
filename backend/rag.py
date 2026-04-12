@@ -586,6 +586,16 @@ class NvidiaRAG:
         _nvidia_key     = os.environ.get("NVIDIA_API_KEY", "")
         _tavily_key     = os.environ.get("TAVILY_API_KEY", "")
 
+        # Validate keys BEFORE building any C-extension objects (embedder/reranker).
+        # TavilyClient raises ValueError for an empty key; if that happens after
+        # NVIDIAEmbeddings/NVIDIARerank are already built, Python GC destroys the
+        # partial object and the C-level cleanup SIGABRTs the process (exit code=null).
+        if not _tavily_key:
+            raise ValueError(
+                "No API key provided. Please provide the api_key attribute or "
+                "set the TAVILY_API_KEY environment variable."
+            )
+
         # ── Per-feature LLM cache (built lazily on first use) ────────────────
         self._feature_llms: dict = {}
 

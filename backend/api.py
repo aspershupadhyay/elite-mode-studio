@@ -39,6 +39,18 @@ def startup():
     database.init_db()
     auth_db.init_auth_db()
     log.info("Database initialised.")
+
+    # Guard: skip NvidiaRAG() entirely when keys aren't set yet.
+    # Without this, TavilyClient raises mid-constructor leaving NVIDIA C-extension
+    # objects (embedder/reranker) partially built; their GC cleanup SIGABRTs the
+    # process (code=null), crashing the backend on every fresh install.
+    _nvidia = os.environ.get("NVIDIA_API_KEY", "").strip()
+    _tavily = os.environ.get("TAVILY_API_KEY", "").strip()
+    if not _nvidia or not _tavily:
+        log.warning("API keys not configured — running in keyless mode. Set keys in Settings.")
+        pipeline = None
+        return
+
     log.info("Initializing pipeline...")
     try:
         pipeline = NvidiaRAG()
@@ -150,9 +162,12 @@ def err(e: Exception, status: int = 500):
 
 @app.get("/api/health")
 def health():
+    # Read live from os.environ so this reflects keys saved after startup.
+    nvidia = os.environ.get("NVIDIA_API_KEY", "")
+    tavily = os.environ.get("TAVILY_API_KEY", "")
     missing = []
-    if not NVIDIA_API_KEY or "your-key" in NVIDIA_API_KEY: missing.append("NVIDIA_API_KEY")
-    if not TAVILY_API_KEY or "your-key" in TAVILY_API_KEY: missing.append("TAVILY_API_KEY")
+    if not nvidia or "your-key" in nvidia: missing.append("NVIDIA_API_KEY")
+    if not tavily or "your-key" in tavily: missing.append("TAVILY_API_KEY")
     return {"status": "degraded" if missing else "ok",
             "missing_keys": missing,
             "models": {"llm": LLM_MODEL, "embed": EMBED_MODEL, "rerank": RERANK_MODEL}}
