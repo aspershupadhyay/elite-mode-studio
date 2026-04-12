@@ -135,9 +135,10 @@ class PageErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState
 
 interface BackendBannerProps {
   status: BackendStatus
+  onRetry: () => void
 }
 
-function BackendBanner({ status }: BackendBannerProps): React.ReactElement | null {
+function BackendBanner({ status, onRetry }: BackendBannerProps): React.ReactElement | null {
   if (status === 'ok') return null
   const isDown = status === 'down'
   return (
@@ -150,10 +151,34 @@ function BackendBanner({ status }: BackendBannerProps): React.ReactElement | nul
       color: isDown ? 'var(--status-red)' : 'var(--status-amber)',
       borderBottom: `0.5px solid ${isDown ? 'rgba(239,68,68,0.2)' : 'rgba(245,158,11,0.2)'}`,
       letterSpacing: '0.01em',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 12,
     }}>
-      {isDown
-        ? 'Backend offline — please restart the app'
-        : 'Backend degraded — check API keys in Settings'}
+      <span>
+        {isDown
+          ? 'Backend offline — failed to start'
+          : 'Backend degraded — check API keys in Settings'}
+      </span>
+      {isDown && (
+        <button
+          onClick={onRetry}
+          style={{
+            fontSize: 10,
+            fontWeight: 600,
+            padding: '2px 10px',
+            borderRadius: 4,
+            border: '1px solid rgba(239,68,68,0.4)',
+            background: 'rgba(239,68,68,0.15)',
+            color: 'var(--status-red)',
+            cursor: 'pointer',
+            letterSpacing: '0.04em',
+          }}
+        >
+          RETRY
+        </button>
+      )}
     </div>
   )
 }
@@ -276,30 +301,39 @@ export default function App(): React.ReactElement {
     return (): void => { window.removeEventListener('schemasChange', handler) }
   }, [])
 
-  useEffect(() => {
-    let cancelled = false
+  const checkHealth = useCallback(async () => {
     let attempts = 0
     const MAX_ATTEMPTS = 25  // 25 x 2s = 50s total wait for PyInstaller cold start
-
-    async function check(): Promise<void> {
-      if (cancelled) return
+    async function attempt(): Promise<void> {
       const { data, error } = await apiFetch<HealthApiResponse>('/api/health')
-      if (cancelled) return
       attempts++
       if (error) {
-        if (attempts < MAX_ATTEMPTS) {
-          setTimeout(() => void check(), 2000)
-        } else {
-          setStatus('down')
-        }
+        if (attempts < MAX_ATTEMPTS) setTimeout(() => void attempt(), 2000)
+        else setStatus('down')
         return
       }
       setStatus((data as HealthApiResponse)?.missing_keys?.length ? 'degraded' : 'ok')
     }
-
-    void check()
-    return () => { cancelled = true }
+    void attempt()
   }, [])
+
+  // Listen for backend status events from main process (IPC-driven, no polling)
+  useEffect(() => {
+    const unsub = window.api.onBackendStatus?.((status) => {
+      if (status === 'up') void checkHealth()
+      else if (status === 'crashed') setStatus('down')
+      // 'starting' → keep 'checking' state
+    })
+    // Fallback: also poll in case the 'up' event was missed (window loaded late)
+    void checkHealth()
+    return () => { unsub?.() }
+  }, [checkHealth])
+
+  const handleRetry = useCallback(async () => {
+    setStatus('checking')
+    await window.api.restartBackend?.()
+    void checkHealth()
+  }, [checkHealth])
 
   const handleLoadTemplate = (templateData: LoadTemplatePayload): void => {
     setPending({ ...templateData, _ts: Date.now() })
@@ -329,7 +363,7 @@ export default function App(): React.ReactElement {
   return (
     <SchemaContext.Provider value={{ activeSchema, refreshSchema }}>
       <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden', background: 'var(--surface-0)' }}>
-        <BackendBanner status={backendStatus} />
+        <BackendBanner status={backendStatus} onRetry={handleRetry} />
         <div style={{ display: 'flex', flex: 1, overflow: 'hidden', position: 'relative' }}>
           <Sidebar current={page} onNav={setPage} backendStatus={backendStatus} />
           <main style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>

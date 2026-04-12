@@ -78,6 +78,15 @@ contextBridge.exposeInMainWorld('api', {
   readLocalImage: (filePath: string): Promise<string | null> =>
     ipcRenderer.invoke('read-local-image', filePath),
 
+  // ── Backend lifecycle ────────────────────────────────────────────────────
+  restartBackend: (): Promise<void> => ipcRenderer.invoke('backend:restart'),
+
+  onBackendStatus: (cb: (status: 'starting' | 'up' | 'crashed') => void): (() => void) => {
+    const handler = (_: unknown, status: 'starting' | 'up' | 'crashed'): void => cb(status)
+    ipcRenderer.on('backend:status', handler)
+    return () => ipcRenderer.removeListener('backend:status', handler)
+  },
+
   // ── Terminal logging from renderer ──────────────────────────────────────
   log: (...args: unknown[]): void => ipcRenderer.send('renderer-log', args),
 

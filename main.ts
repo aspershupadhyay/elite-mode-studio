@@ -63,27 +63,74 @@ function isPortInUse(port: number): Promise<boolean> {
   })
 }
 
+let backendRestarts = 0
+const MAX_BACKEND_RESTARTS = 3
+const backendLogPath = path.join(app.getPath('userData'), 'backend.log')
+
+function notifyBackendStatus(status: 'starting' | 'up' | 'crashed'): void {
+  mainWindow?.webContents.send('backend:status', status)
+}
+
 async function startBackend(): Promise<void> {
   const inUse = await isPortInUse(8000)
   if (inUse) { console.log('[main] Port 8000 in use — reusing'); return }
 
+  let spawnArgs: { cmd: string; args: string[]; opts: object }
+
   if (isDev) {
-    // Dev mode: use system Python (unchanged, fast iteration)
     const backendPath = path.join(__dirname, 'backend')
-    backendProcess = spawn('python3', ['-m', 'uvicorn', 'api:app', '--host', '127.0.0.1', '--port', '8000'], {
-      cwd: backendPath, stdio: 'pipe',
-    })
+    spawnArgs = {
+      cmd: 'python3',
+      args: ['-m', 'uvicorn', 'api:app', '--host', '127.0.0.1', '--port', '8000'],
+      opts: { cwd: backendPath, stdio: 'pipe' },
+    }
   } else {
-    // Production: use the PyInstaller binary bundled in extraResources/api_server/
     const binaryName = process.platform === 'win32' ? 'api_server.exe' : 'api_server'
     const binaryPath = path.join(process.resourcesPath, 'api_server', binaryName)
-    backendProcess = spawn(binaryPath, ['--host', '127.0.0.1', '--port', '8000'], {
-      stdio: 'pipe',
-    })
+    if (!fs.existsSync(binaryPath)) {
+      const msg = `[backend] Binary not found: ${binaryPath}\n`
+      fs.appendFileSync(backendLogPath, msg)
+      console.error(msg)
+      notifyBackendStatus('crashed')
+      return
+    }
+    // Ensure executable bit (may be lost during packaging on macOS/Linux)
+    if (process.platform !== 'win32') {
+      try { fs.chmodSync(binaryPath, 0o755) } catch { /* ignore */ }
+    }
+    spawnArgs = {
+      cmd: binaryPath,
+      args: ['--host', '127.0.0.1', '--port', '8000'],
+      opts: { stdio: 'pipe' },
+    }
   }
 
-  backendProcess.stdout?.on('data', (d: Buffer) => console.log('[backend]', d.toString()))
-  backendProcess.stderr?.on('data', (d: Buffer) => console.error('[backend]', d.toString()))
+  notifyBackendStatus('starting')
+  backendProcess = spawn(spawnArgs.cmd, spawnArgs.args, spawnArgs.opts as object)
+
+  backendProcess.stdout?.on('data', (d: Buffer) => {
+    const line = d.toString()
+    console.log('[backend]', line)
+    fs.appendFileSync(backendLogPath, line)
+  })
+  backendProcess.stderr?.on('data', (d: Buffer) => {
+    const line = d.toString()
+    console.error('[backend]', line)
+    fs.appendFileSync(backendLogPath, line)
+  })
+
+  backendProcess.on('exit', (code) => {
+    console.log(`[backend] exited with code ${code}`)
+    fs.appendFileSync(backendLogPath, `[exit] code=${code}\n`)
+    if (code !== 0 && backendRestarts < MAX_BACKEND_RESTARTS) {
+      backendRestarts++
+      console.log(`[backend] restarting (attempt ${backendRestarts}/${MAX_BACKEND_RESTARTS})…`)
+      fs.appendFileSync(backendLogPath, `[restart] attempt ${backendRestarts}\n`)
+      setTimeout(() => void startBackend(), 2000)
+    } else if (code !== 0) {
+      notifyBackendStatus('crashed')
+    }
+  })
 }
 
 function waitForBackend(timeoutMs = 45_000): Promise<void> {
@@ -169,6 +216,15 @@ function createWindow(): void {
 }
 
 // ── IPC ────────────────────────────────────────────────────────────────────
+ipcMain.handle('backend:restart', async () => {
+  backendProcess?.kill()
+  backendProcess = null
+  backendRestarts = 0
+  await startBackend()
+  await waitForBackend(45_000)
+  notifyBackendStatus('up')
+})
+
 ipcMain.handle('open-auth-popup', (_event, url: string) => { handlePopup(url) })
 ipcMain.handle('open-external',   (_event, url: string) => shell.openExternal(url))
 
@@ -732,9 +788,10 @@ ipcMain.handle('read-local-image', (_event: IpcMainInvokeEvent, filePath: string
 
 // ── App lifecycle ──────────────────────────────────────────────────────────
 app.whenReady().then(async () => {
-  startBackend()
-  await waitForBackend()
+  void startBackend()
   createWindow()
+  // Wait for backend in the background; notify renderer when it's up
+  waitForBackend(45_000).then(() => notifyBackendStatus('up'))
   ensureCallbackServer()
 
   const { session: electronSession } = await import('electron')

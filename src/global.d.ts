@@ -97,6 +97,9 @@ declare global {
       // First-run setup
       setupCheck:      () => Promise<SetupCheckResult>
       setupSaveConfig: (req: SetupSaveRequest) => Promise<{ ok: boolean; error?: string }>
+      // Backend lifecycle
+      restartBackend?:   () => Promise<void>
+      onBackendStatus?:  (cb: (status: 'starting' | 'up' | 'crashed') => void) => (() => void)
     }
   }
 
