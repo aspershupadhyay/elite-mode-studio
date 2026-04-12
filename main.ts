@@ -204,6 +204,14 @@ function createWindow(): void {
   if (isDev) void mainWindow.loadURL('http://localhost:5173')
   else void mainWindow.loadFile(path.join(__dirname, 'dist', 'index.html'))
 
+  // Re-send backend status once the renderer is ready — prevents the race where
+  // 'backend:status: up' fires before React has mounted its IPC listener.
+  mainWindow.webContents.once('did-finish-load', () => {
+    waitForBackend(10_000)
+      .then(() => notifyBackendStatus('up'))
+      .catch(() => { /* backend not yet up — frontend checkHealth() fallback will handle it */ })
+  })
+
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
 
   // Webview new-window → route through our popup handler

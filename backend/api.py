@@ -33,12 +33,31 @@ app.add_middleware(
 # This lets the /api/health endpoint respond even if the AI keys are invalid.
 pipeline: Optional[NvidiaRAG] = None
 
+_DEFAULT_CANVAS_JSON = '{"version":"6.4.3","objects":[],"background":"#0F0F0F"}'
+
+def _seed_default_template():
+    """Seed one starter template for first-time users. Runs once — skipped if any template exists."""
+    try:
+        if database.get_templates():
+            return  # Templates already exist, nothing to seed
+        database.save_template(
+            name="IG Feed — Dark",
+            canvas_json=_DEFAULT_CANVAS_JSON,
+            thumbnail=None,
+            width=1080,
+            height=1350,
+        )
+        log.info("Seeded default IG Feed template.")
+    except Exception as e:
+        log.warning("Failed to seed default template: %s", e)
+
 @app.on_event("startup")
 def startup():
     global pipeline
     database.init_db()
     auth_db.init_auth_db()
     log.info("Database initialised.")
+    _seed_default_template()
 
     # Guard: skip NvidiaRAG() entirely when keys aren't set yet.
     # Without this, TavilyClient raises mid-constructor leaving NVIDIA C-extension

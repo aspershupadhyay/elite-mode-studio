@@ -31,7 +31,7 @@ export async function apiFetch<T>(
     if (msg.includes('fetch') || msg.includes('Failed')) {
       return {
         data: null,
-        error: 'Cannot reach backend. Make sure python3 api.py is running in Terminal.',
+        error: 'Backend is starting up — please wait a moment.',
       }
     }
     return { data: null, error: msg }
@@ -103,7 +103,7 @@ export async function apiStream(
     })
   } catch (e: unknown) {
     if (e instanceof Error && e.name === 'AbortError') throw e
-    throw new Error('Cannot reach backend. Make sure the backend is running.')
+    throw new Error('Backend is starting up — please wait a moment.')
   }
   if (!response.ok) {
     const json = await response.json().catch(() => ({})) as Record<string, unknown>

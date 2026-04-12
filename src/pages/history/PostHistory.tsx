@@ -233,8 +233,16 @@ export default function PostHistory({ onSendToStudio }: PostHistoryProps): React
   async function load(): Promise<void> {
     setLoading(true)
     const { data, error: err } = await apiFetch('/api/posts')
-    if (err) setError(err)
-    else setPosts((data as PostsApiResponse).posts || [])
+    if (err) {
+      // Backend offline on fresh install — show clean empty state, not an error banner
+      if (err.includes('starting up') || err.includes('reach') || err.includes('offline')) {
+        setPosts([])
+      } else {
+        setError(err)
+      }
+    } else {
+      setPosts((data as PostsApiResponse).posts || [])
+    }
     setLoading(false)
   }
 

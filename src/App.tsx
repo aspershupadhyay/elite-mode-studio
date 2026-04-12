@@ -8,7 +8,6 @@ import DesignStudio from './pages/studio/DesignStudio'
 import TemplateGallery from './pages/templates/TemplateGallery'
 import PostHistory from './pages/history/PostHistory'
 import Settings from './pages/settings/Settings'
-import SetupModal from './pages/settings/SetupModal'
 import { apiFetch } from './api'
 import type { LoadTemplatePayload } from './pages/templates/TemplateGallery'
 import { bootstrapSchemas, getActiveSchema } from './utils/schemaStorage'
@@ -212,26 +211,7 @@ export default function App(): React.ReactElement {
   const [pendingBatch, setPendingBatch] = useState<PendingBatch | undefined>(undefined)
   const [galleryRefreshKey, setGalleryRefreshKey] = useState<number>(0)
   const [activeSchema, setActiveSchema] = useState<ContentSchemaConfig>(getActiveSchema)
-  const [setupNeeded,  setSetupNeeded]  = useState(false)
-  const [setupMissing, setSetupMissing] = useState<string[]>([])
-
   const refreshSchema = (): void => { setActiveSchema(getActiveSchema()) }
-
-  useEffect(() => {
-    // Wait 3 s for backend to start, then check if API keys are configured
-    const t = setTimeout(async () => {
-      try {
-        const result = await window.api.setupCheck()
-        if (!result.configured) {
-          setSetupMissing(result.missingKeys)
-          setSetupNeeded(true)
-        }
-      } catch {
-        // Backend not up yet — skip silently
-      }
-    }, 3000)
-    return () => clearTimeout(t)
-  }, [])
 
   // ── Image generation pipeline ─────────────────────────────────────────────
   // generatedImages: postId → file:// URL — fed to Forge (PostCard) + Studio (canvas)
@@ -329,6 +309,13 @@ export default function App(): React.ReactElement {
     return () => { unsub?.() }
   }, [checkHealth])
 
+  // Re-run health check when user saves API keys in Settings — clears the "degraded" banner instantly
+  useEffect(() => {
+    const handler = (): void => { void checkHealth() }
+    window.addEventListener('apiKeySaved', handler)
+    return (): void => { window.removeEventListener('apiKeySaved', handler) }
+  }, [checkHealth])
+
   const handleRetry = useCallback(async () => {
     setStatus('checking')
     await window.api.restartBackend?.()
@@ -339,6 +326,12 @@ export default function App(): React.ReactElement {
     setPending({ ...templateData, _ts: Date.now() })
     setPage('studio')
   }
+
+  // Refresh gallery every time the user navigates to it so thumbnails are always fresh
+  const handleNav = useCallback((id: import('./components/Sidebar').PageId): void => {
+    if (id === 'templates') setGalleryRefreshKey(k => k + 1)
+    setPage(id)
+  }, [])
 
   // Called from ContentGen when user hits "Send to Studio" (single post)
   const handleApplyContent = (post: import('./types/domain').Post): void => {
@@ -365,7 +358,7 @@ export default function App(): React.ReactElement {
       <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden', background: 'var(--surface-0)' }}>
         <BackendBanner status={backendStatus} onRetry={handleRetry} />
         <div style={{ display: 'flex', flex: 1, overflow: 'hidden', position: 'relative' }}>
-          <Sidebar current={page} onNav={setPage} backendStatus={backendStatus} />
+          <Sidebar current={page} onNav={handleNav} backendStatus={backendStatus} />
           <main style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
             <PageSlot active={page === 'web'}>
               <PageErrorBoundary>
@@ -414,12 +407,6 @@ export default function App(): React.ReactElement {
         </div>
 
       </div>
-      {setupNeeded && (
-        <SetupModal
-          missingKeys={setupMissing}
-          onComplete={() => setSetupNeeded(false)}
-        />
-      )}
     </SchemaContext.Provider>
   )
 }

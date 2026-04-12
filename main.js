@@ -84,31 +84,77 @@ function isPortInUse(port) {
         tester.listen(port, '127.0.0.1');
     });
 }
+let backendRestarts = 0;
+const MAX_BACKEND_RESTARTS = 3;
+const backendLogPath = path_1.default.join(electron_1.app.getPath('userData'), 'backend.log');
+function notifyBackendStatus(status) {
+    mainWindow?.webContents.send('backend:status', status);
+}
 async function startBackend() {
     const inUse = await isPortInUse(8000);
     if (inUse) {
         console.log('[main] Port 8000 in use — reusing');
         return;
     }
+    let spawnArgs;
     if (isDev) {
-        // Dev mode: use system Python (unchanged, fast iteration)
         const backendPath = path_1.default.join(__dirname, 'backend');
-        backendProcess = (0, child_process_1.spawn)('python3', ['-m', 'uvicorn', 'api:app', '--host', '127.0.0.1', '--port', '8000'], {
-            cwd: backendPath, stdio: 'pipe',
-        });
+        spawnArgs = {
+            cmd: 'python3',
+            args: ['-m', 'uvicorn', 'api:app', '--host', '127.0.0.1', '--port', '8000'],
+            opts: { cwd: backendPath, stdio: 'pipe' },
+        };
     }
     else {
-        // Production: use the PyInstaller binary bundled in extraResources/api_server/
         const binaryName = process.platform === 'win32' ? 'api_server.exe' : 'api_server';
         const binaryPath = path_1.default.join(process.resourcesPath, 'api_server', binaryName);
-        backendProcess = (0, child_process_1.spawn)(binaryPath, ['--host', '127.0.0.1', '--port', '8000'], {
-            stdio: 'pipe',
-        });
+        if (!fs_1.default.existsSync(binaryPath)) {
+            const msg = `[backend] Binary not found: ${binaryPath}\n`;
+            fs_1.default.appendFileSync(backendLogPath, msg);
+            console.error(msg);
+            notifyBackendStatus('crashed');
+            return;
+        }
+        // Ensure executable bit (may be lost during packaging on macOS/Linux)
+        if (process.platform !== 'win32') {
+            try {
+                fs_1.default.chmodSync(binaryPath, 0o755);
+            }
+            catch { /* ignore */ }
+        }
+        spawnArgs = {
+            cmd: binaryPath,
+            args: ['--host', '127.0.0.1', '--port', '8000'],
+            opts: { stdio: 'pipe' },
+        };
     }
-    backendProcess.stdout?.on('data', (d) => console.log('[backend]', d.toString()));
-    backendProcess.stderr?.on('data', (d) => console.error('[backend]', d.toString()));
+    notifyBackendStatus('starting');
+    backendProcess = (0, child_process_1.spawn)(spawnArgs.cmd, spawnArgs.args, spawnArgs.opts);
+    backendProcess.stdout?.on('data', (d) => {
+        const line = d.toString();
+        console.log('[backend]', line);
+        fs_1.default.appendFileSync(backendLogPath, line);
+    });
+    backendProcess.stderr?.on('data', (d) => {
+        const line = d.toString();
+        console.error('[backend]', line);
+        fs_1.default.appendFileSync(backendLogPath, line);
+    });
+    backendProcess.on('exit', (code) => {
+        console.log(`[backend] exited with code ${code}`);
+        fs_1.default.appendFileSync(backendLogPath, `[exit] code=${code}\n`);
+        if (code !== 0 && backendRestarts < MAX_BACKEND_RESTARTS) {
+            backendRestarts++;
+            console.log(`[backend] restarting (attempt ${backendRestarts}/${MAX_BACKEND_RESTARTS})…`);
+            fs_1.default.appendFileSync(backendLogPath, `[restart] attempt ${backendRestarts}\n`);
+            setTimeout(() => void startBackend(), 2000);
+        }
+        else if (code !== 0) {
+            notifyBackendStatus('crashed');
+        }
+    });
 }
-function waitForBackend(timeoutMs = 10000) {
+function waitForBackend(timeoutMs = 45000) {
     return new Promise((resolve) => {
         const start = Date.now();
         function attempt() {
@@ -182,6 +228,13 @@ function createWindow() {
         void mainWindow.loadURL('http://localhost:5173');
     else
         void mainWindow.loadFile(path_1.default.join(__dirname, 'dist', 'index.html'));
+    // Re-send backend status once the renderer is ready — prevents the race where
+    // 'backend:status: up' fires before React has mounted its IPC listener.
+    mainWindow.webContents.once('did-finish-load', () => {
+        waitForBackend(10000)
+            .then(() => notifyBackendStatus('up'))
+            .catch(() => { });
+    });
     mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     // Webview new-window → route through our popup handler
     mainWindow.webContents.on('did-attach-webview', (_event, webviewContents) => {
@@ -192,6 +245,14 @@ function createWindow() {
     });
 }
 // ── IPC ────────────────────────────────────────────────────────────────────
+electron_1.ipcMain.handle('backend:restart', async () => {
+    backendProcess?.kill();
+    backendProcess = null;
+    backendRestarts = 0;
+    await startBackend();
+    await waitForBackend(45000);
+    notifyBackendStatus('up');
+});
 electron_1.ipcMain.handle('open-auth-popup', (_event, url) => { handlePopup(url); });
 electron_1.ipcMain.handle('open-external', (_event, url) => electron_1.shell.openExternal(url));
 // ── First-run setup ────────────────────────────────────────────────────────
@@ -793,9 +854,10 @@ electron_1.ipcMain.handle('read-local-image', (_event, filePath) => {
 });
 // ── App lifecycle ──────────────────────────────────────────────────────────
 electron_1.app.whenReady().then(async () => {
-    startBackend();
-    await waitForBackend();
+    void startBackend();
     createWindow();
+    // Wait for backend in the background; notify renderer when it's up
+    waitForBackend(45000).then(() => notifyBackendStatus('up'));
     ensureCallbackServer();
     const { session: electronSession } = await Promise.resolve().then(() => __importStar(require('electron')));
     const aiSession = electronSession.fromPartition('persist:ai-browser');

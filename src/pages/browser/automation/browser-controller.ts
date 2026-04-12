@@ -104,6 +104,10 @@ export function hideChatWindow(): void {
  * Navigate to ChatGPT and wait for the SPA UI to be interactive.
  * `did-finish-load` fires too early (HTML shell only), so we poll for
  * the presence of the prompt input element via executeJavaScript.
+ *
+ * For jobs after the first: tries to click "New chat" WITHIN the current
+ * project page (stays in project context) instead of doing a full loadURL
+ * which can exit the project on subsequent generations.
  */
 export async function navigateToHome(jobLabel?: string): Promise<void> {
   const win = getChatWindow()
@@ -113,10 +117,60 @@ export async function navigateToHome(jobLabel?: string): Promise<void> {
   win.focus()
   if (jobLabel) win.setTitle(`Elite Mode — Generating: ${jobLabel}`)
 
-  await win.loadURL(targetUrl)
+  // If we're already somewhere within the configured project URL, try to
+  // start a new conversation by clicking the in-page "New chat" button.
+  // This avoids a full loadURL which can land outside the project context.
+  const currentUrl = win.webContents.getURL()
+  const baseProjectUrl = targetUrl.split('/c/')[0]  // strip any conversation ID
+  if (currentUrl && currentUrl.startsWith(baseProjectUrl) && currentUrl !== 'about:blank') {
+    const clickedNew = await tryClickNewChat(win)
+    if (clickedNew) {
+      await waitForChatInput(win, 20_000)
+      return
+    }
+  }
 
-  // Wait for the React app to render the prompt input (up to 25s)
+  // Full navigation fallback
+  await win.loadURL(targetUrl)
   await waitForChatInput(win, 25_000)
+}
+
+/**
+ * Try to find and click a "New chat" / compose button within the current
+ * ChatGPT page to start a fresh conversation without leaving the project.
+ * Returns true if a button was found and clicked.
+ */
+async function tryClickNewChat(win: BrowserWindow): Promise<boolean> {
+  try {
+    const clicked = await win.webContents.executeJavaScript(`
+      (function() {
+        const selectors = [
+          '[data-testid="create-new-chat-button"]',
+          '[data-testid="new-chat-button"]',
+          '[aria-label="New chat"]',
+          'a[aria-label="New chat"]',
+          'button[aria-label="New chat"]',
+        ]
+        for (const sel of selectors) {
+          const el = document.querySelector(sel)
+          if (el instanceof HTMLElement) { el.click(); return true }
+        }
+        // Text-content fallback
+        for (const el of document.querySelectorAll('button, a')) {
+          if (el.textContent?.trim() === 'New chat') {
+            el.click(); return true
+          }
+        }
+        return false
+      })()
+    `) as boolean
+    if (clicked) {
+      console.log('[browser-controller] Clicked "New chat" — staying in project context')
+    }
+    return !!clicked
+  } catch {
+    return false
+  }
 }
 
 /**

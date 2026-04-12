@@ -40,6 +40,13 @@ electron_1.contextBridge.exposeInMainWorld('api', {
     setupSaveConfig: (req) => electron_1.ipcRenderer.invoke('setup:save-config', req),
     // ── Read local file as base64 data URL (dev: file:// blocked by SOP) ───
     readLocalImage: (filePath) => electron_1.ipcRenderer.invoke('read-local-image', filePath),
+    // ── Backend lifecycle ────────────────────────────────────────────────────
+    restartBackend: () => electron_1.ipcRenderer.invoke('backend:restart'),
+    onBackendStatus: (cb) => {
+        const handler = (_, status) => cb(status);
+        electron_1.ipcRenderer.on('backend:status', handler);
+        return () => electron_1.ipcRenderer.removeListener('backend:status', handler);
+    },
     // ── Terminal logging from renderer ──────────────────────────────────────
     log: (...args) => electron_1.ipcRenderer.send('renderer-log', args),
     // ── CDN image interception — DISABLED (replaced by will-download) ────────

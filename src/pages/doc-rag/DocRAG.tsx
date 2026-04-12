@@ -4,6 +4,7 @@ import PageShell from '../../components/PageShell'
 import { Card, GreenCard, Label, Btn, Input } from '../../components/ui'
 import { Upload, FileText, MessageSquare } from 'lucide-react'
 import { apiPost } from '../../api'
+import ModelBadge from '../forge/ModelBadge'
 
 interface DocInfo {
   filename: string
@@ -59,7 +60,11 @@ export default function DocRAG(): React.ReactElement {
   }
 
   return (
-    <PageShell title="Doc RAG" subtitle="Upload a PDF or TXT — ask anything about it">
+    <PageShell
+      title="Doc RAG"
+      subtitle="Upload a PDF or TXT — ask anything about it"
+      actions={<ModelBadge feature="doc_rag" />}
+    >
       <div style={{ maxWidth: 760 }}>
         <div {...getRootProps()} style={{
           border: `2px dashed ${isDragActive ? 'var(--green)' : 'var(--border)'}`,

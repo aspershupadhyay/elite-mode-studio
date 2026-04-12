@@ -229,6 +229,8 @@ export default function Settings(): React.ReactElement {
     setSavingKeys(false); setSavedKeys(true)
     setTimeout(() => setSavedKeys(false), 2500)
     window.dispatchEvent(new CustomEvent('storageChange'))
+    // Tell App to re-check backend health — clears the "degraded" banner
+    window.dispatchEvent(new CustomEvent('apiKeySaved'))
   }
 
   async function runTest(): Promise<void> {

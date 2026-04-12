@@ -10,6 +10,7 @@ import type { ModelDef, ProviderDef } from '../settings/model-types'
 import { PROVIDER_COLORS } from '../settings/model-types'
 
 interface Props {
+  feature?: string
   onModelChange?: (provider: string, model: string) => void
 }
 
@@ -27,7 +28,7 @@ const T = {
   green:  'var(--green, #34d399)',
 }
 
-export default function ModelBadge({ onModelChange }: Props) {
+export default function ModelBadge({ feature = 'forge', onModelChange }: Props) {
   const [models,    setModels]    = useState<ModelDef[]>([])
   const [providers, setProviders] = useState<Record<string, ProviderDef>>({})
   const [active,    setActive]    = useState<ModelDef | null>(null)
@@ -55,7 +56,7 @@ export default function ModelBadge({ onModelChange }: Props) {
     })
     setModels(unlocked)
 
-    const forgeModelId = cfgRes.data?.llm_features?.forge?.model
+    const forgeModelId = cfgRes.data?.llm_features?.[feature]?.model
     if (forgeModelId) {
       const found = unlocked.find(m => m.id === forgeModelId) ??
                     allModels.find(m => m.id === forgeModelId)
@@ -63,7 +64,7 @@ export default function ModelBadge({ onModelChange }: Props) {
     }
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { load() }, [feature])
 
   useEffect(() => {
     if (!open) return
@@ -79,7 +80,7 @@ export default function ModelBadge({ onModelChange }: Props) {
   async function selectModel(model: ModelDef) {
     setSaving(true)
     await apiPost('/api/llm-config', {
-      feature: 'forge', provider: model.provider, model: model.id,
+      feature, provider: model.provider, model: model.id,
     })
     setActive(model); setOpen(false); setSearch(''); setSaving(false)
     onModelChange?.(model.provider, model.id)
