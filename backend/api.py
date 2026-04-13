@@ -1010,6 +1010,255 @@ def check_provider_key(provider: str):
     return {"provider": provider, "requires_key": requires, "key_set": is_set}
 
 
+# ── AI image generation (multi-provider) ──────────────────────────────────
+# Supports: openai (DALL-E 3), fal (Flux Schnell), stability (SDXL)
+# Keys are read from env vars or passed inline as api_key in the request.
+
+class ImageGenRequest(BaseModel):
+    provider: str = "openai"
+    prompt: str
+    api_key: Optional[str] = None
+    size: Optional[str] = "1024x1024"
+    model: Optional[str] = None
+
+@app.post("/api/generate-image")
+async def generate_image_api(body: ImageGenRequest):
+    """Generate an image via AI provider, return URL or data URI."""
+    if not body.prompt.strip():
+        raise HTTPException(status_code=400, detail="prompt is required")
+    provider = body.provider.lower()
+
+    if provider == "openai":
+        try:
+            import openai as _openai
+        except ImportError:
+            raise HTTPException(status_code=500, detail="openai not installed: pip install openai")
+        key = body.api_key or os.getenv("OPENAI_API_KEY")
+        if not key:
+            raise HTTPException(status_code=400, detail="OPENAI_API_KEY not set")
+        valid_sizes = ("1024x1024", "1792x1024", "1024x1792")
+        size = body.size if body.size in valid_sizes else "1024x1024"
+        client = _openai.AsyncOpenAI(api_key=key)
+        resp = await client.images.generate(
+            model=body.model or "dall-e-3", prompt=body.prompt,
+            size=size, quality="standard", n=1,
+        )
+        return {"url": resp.data[0].url, "provider": "openai"}
+
+    elif provider == "fal":
+        try:
+            import httpx as _httpx
+        except ImportError:
+            raise HTTPException(status_code=500, detail="httpx not installed: pip install httpx")
+        key = body.api_key or os.getenv("FAL_API_KEY")
+        if not key:
+            raise HTTPException(status_code=400, detail="FAL_API_KEY not set")
+        model_id = body.model or "fal-ai/flux/schnell"
+        async with _httpx.AsyncClient(timeout=90) as c:
+            r = await c.post(
+                f"https://fal.run/{model_id}",
+                headers={"Authorization": f"Key {key}", "Content-Type": "application/json"},
+                json={"prompt": body.prompt, "image_size": "landscape_4_3", "num_images": 1},
+            )
+            if r.status_code != 200:
+                raise HTTPException(status_code=r.status_code, detail=f"fal.ai: {r.text[:300]}")
+            url = r.json().get("images", [{}])[0].get("url", "")
+            if not url:
+                raise HTTPException(status_code=500, detail="fal.ai returned no image URL")
+        return {"url": url, "provider": "fal"}
+
+    elif provider == "stability":
+        try:
+            import httpx as _httpx
+        except ImportError:
+            raise HTTPException(status_code=500, detail="httpx not installed: pip install httpx")
+        key = body.api_key or os.getenv("STABILITY_API_KEY")
+        if not key:
+            raise HTTPException(status_code=400, detail="STABILITY_API_KEY not set")
+        engine = body.model or "stable-diffusion-xl-1024-v1-0"
+        async with _httpx.AsyncClient(timeout=90) as c:
+            r = await c.post(
+                f"https://api.stability.ai/v1/generation/{engine}/text-to-image",
+                headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json", "Accept": "application/json"},
+                json={"text_prompts": [{"text": body.prompt, "weight": 1}],
+                      "cfg_scale": 7, "height": 1024, "width": 1024, "samples": 1, "steps": 30},
+            )
+            if r.status_code != 200:
+                raise HTTPException(status_code=r.status_code, detail=f"Stability AI: {r.text[:300]}")
+            artifacts = r.json().get("artifacts", [])
+            if not artifacts:
+                raise HTTPException(status_code=500, detail="Stability AI returned no artifacts")
+            b64 = artifacts[0]["base64"]
+        return {"url": f"data:image/png;base64,{b64}", "provider": "stability"}
+
+    else:
+        raise HTTPException(status_code=400, detail=f"Unknown provider '{provider}'. Valid: openai, fal, stability")
+
+
+@app.get("/api/image-providers")
+async def image_providers():
+    """Report which image generation providers have API keys configured."""
+    openai_key    = os.getenv("OPENAI_API_KEY", "").strip()
+    fal_key       = os.getenv("FAL_API_KEY", "").strip()
+    stability_key = os.getenv("STABILITY_API_KEY", "").strip()
+
+    providers: dict = {
+        "fal": {
+            "available": bool(fal_key),
+            "speed": "3-10s (fastest)",
+            "model": "flux-schnell",
+            "hint": None if fal_key else "Add FAL_API_KEY to backend/.env — free tier available at fal.ai",
+        },
+        "openai": {
+            "available": bool(openai_key),
+            "speed": "5-15s",
+            "model": "dall-e-3",
+            "hint": None if openai_key else "Add OPENAI_API_KEY to backend/.env",
+        },
+        "stability": {
+            "available": bool(stability_key),
+            "speed": "10-20s",
+            "model": "sdxl-1024",
+            "hint": None if stability_key else "Add STABILITY_API_KEY to backend/.env",
+        },
+        "chatgpt": {
+            "available": True,
+            "speed": "30-120s (slowest, no key needed)",
+            "model": "dall-e-3",
+            "hint": "Requires active ChatGPT browser session — navigate to the Web tab and log in first",
+        },
+    }
+
+    api_ready = [k for k, v in providers.items() if v["available"] and k != "chatgpt"]
+    recommended = api_ready[0] if api_ready else "chatgpt"
+
+    return {
+        "providers": providers,
+        "recommended": recommended,
+        "api_providers_ready": api_ready,
+        "tip": (
+            "For fastest images: add FAL_API_KEY to backend/.env (free tier, 3-10s/image)"
+            if not api_ready else None
+        ),
+    }
+
+
+@app.post("/api/image-providers")
+async def image_providers_post():
+    """POST alias — lets MCP clients that always POST still reach this endpoint."""
+    return await image_providers()
+
+
+@app.post("/api/batch-generate-images")
+async def batch_generate_images(body: dict):
+    """Generate multiple images in parallel using API providers (not chatgpt)."""
+    images = body.get("images", [])
+    if not images or not isinstance(images, list):
+        raise HTTPException(status_code=400, detail="images must be a non-empty array")
+
+    import asyncio as _asyncio
+
+    async def gen_one(img: dict) -> dict:
+        req = ImageGenRequest(
+            provider=img.get("provider", "fal"),
+            prompt=img.get("prompt", ""),
+            api_key=img.get("api_key"),
+            size=img.get("size", "1024x1024"),
+            model=img.get("model"),
+        )
+        try:
+            result = await generate_image_api(req)
+            return {"status": "done", "url": result["url"], "provider": result["provider"],
+                    "target_frame": img.get("target_frame"), "page_index": img.get("page_index")}
+        except HTTPException as e:
+            return {"status": "error", "error": e.detail, "prompt": img.get("prompt")}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "prompt": img.get("prompt")}
+
+    results = await _asyncio.gather(*[gen_one(img) for img in images])
+    done  = sum(1 for r in results if r["status"] == "done")
+    errors = sum(1 for r in results if r["status"] == "error")
+    return {"total": len(images), "done": done, "errors": errors, "results": list(results)}
+
+
+# ── Design-from-brief endpoint ────────────────────────────────────────────────
+
+class DesignBriefRequest(BaseModel):
+    brief: str
+    canvas_width: int = 1080
+    canvas_height: int = 1350
+    background: Optional[str] = None
+
+_DESIGN_BRIEF_SYSTEM = """You are an expert social media graphic designer.
+Given a brief, output ONLY a valid JSON object with:
+  "background": "#hex",
+  "plan": [ ... array of design steps ... ]
+
+Each step must be one of:
+  { "action": "set_background", "params": { "color": "#hex" } }
+  { "action": "add_title",    "params": { "text": "...", "x": N, "y": N, "width": N, "height": N, "color": "#hex", "fontSize": N, "fontFamily": "..." } }
+  { "action": "add_subtitle", "params": { "text": "...", "x": N, "y": N, "width": N, "height": N, "color": "#hex", "fontSize": N } }
+  { "action": "add_tag",      "params": { "text": "...", "x": N, "y": N, "width": N, "height": N, "color": "#hex" } }
+  { "action": "add_shape",    "params": { "shape": "rect|circle", "x": N, "y": N, "width": N, "height": N, "fill": "#hex", "opacity": 0-1 } }
+  { "action": "add_accent_line", "params": { "x": N, "y": N, "width": N, "height": N } }
+  { "action": "add_gradient_overlay", "params": { "x": N, "y": N, "width": N, "height": N } }
+  { "action": "update_element", "params": { "label": "...", ... } }
+
+Rules:
+- Canvas origin (0,0) is top-left. All coordinates are in pixels.
+- Leave 48px safe margins on all edges.
+- Title: y around 80, full width minus margins.
+- Subtitle: below title with 24px gap.
+- Tag: near bottom (y = canvas_height - 100).
+- Accent line: at bottom (y = canvas_height - 8, height = 6, full width).
+- Use at most 8 steps. Output ONLY the JSON, no explanation."""
+
+@app.post("/api/design-brief")
+async def design_brief(body: DesignBriefRequest):
+    """Use NVIDIA NIM LLM to generate a canvas layout plan from a natural-language brief."""
+    if not body.brief.strip():
+        raise HTTPException(status_code=400, detail="brief is required")
+
+    from langchain_nvidia_ai_endpoints import ChatNVIDIA
+    from langchain_core.messages import SystemMessage, HumanMessage
+    import json as _json
+
+    key = os.environ.get("NVIDIA_API_KEY", "").strip()
+    if not key:
+        raise HTTPException(status_code=400, detail="NVIDIA_API_KEY not configured")
+
+    user_msg = (
+        f"Brief: {body.brief}\n"
+        f"Canvas size: {body.canvas_width}x{body.canvas_height}px"
+        + (f"\nPreferred background: {body.background}" if body.background else "")
+    )
+
+    try:
+        llm = ChatNVIDIA(
+            model="meta/llama-3.3-70b-instruct",
+            nvidia_api_key=key,
+            temperature=0.3,
+            max_tokens=1500,
+        )
+        response = await llm.ainvoke([
+            SystemMessage(content=_DESIGN_BRIEF_SYSTEM),
+            HumanMessage(content=user_msg),
+        ])
+        raw = str(response.content).strip()
+        # Strip markdown code fences if present
+        if raw.startswith("```"):
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+            raw = raw.strip()
+        plan_data = _json.loads(raw)
+        if "plan" not in plan_data:
+            raise ValueError("LLM response missing 'plan' key")
+        return plan_data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Design brief failed: {e}")
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("api:app", host="127.0.0.1", port=8000, reload=True,
