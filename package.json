@@ -44,6 +44,10 @@
     ],
     "extraResources": [
       {
+        "from": "backend/dist/api_server",
+        "to": "api_server"
+      },
+      {
         "from": "docs/elite_mode_instruction.md",
         "to": "elite_mode_instruction.md"
       }
