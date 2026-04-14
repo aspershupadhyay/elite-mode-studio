@@ -1,6 +1,6 @@
 {
   "name": "creator-os",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "CreatorOS — AI-powered social media content & design automation",
   "author": "Sparsh Upadhyay",
   "main": "main.js",
@@ -8,6 +8,11 @@
     "typecheck": "tsc --noEmit",
     "build:electron": "tsc -p tsconfig.electron.json",
     "build:backend": "cd backend && pyinstaller backend.spec -y",
+    "build:mcp": "tsc -p mcp/tsconfig.json",
+    "mcp": "node mcp/dist/server.js",
+    "mcp:http": "node mcp/dist/server.js --http",
+    "mcp:tunnel": "concurrently \"node mcp/dist/server.js --http\" \"cloudflared tunnel --url http://localhost:3100\"",
+    "mcp:ngrok": "concurrently \"node mcp/dist/server.js --http\" \"ngrok http 3100\"",
     "generate-icons": "node scripts/generate-icons.js",
     "dev": "npm run build:electron && concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
     "build": "npm run build:electron && vite build",
@@ -38,10 +43,6 @@
       "package.json"
     ],
     "extraResources": [
-      {
-        "from": "backend/dist/api_server",
-        "to": "api_server"
-      },
       {
         "from": "docs/elite_mode_instruction.md",
         "to": "elite_mode_instruction.md"
@@ -195,6 +196,7 @@
     "@fontsource/syncopate": "^5.2.8",
     "@fontsource/teko": "^5.2.7",
     "@fontsource/yellowtail": "^5.2.8",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "fabric": "^6.4.3",
     "jszip": "^3.10.1",
     "lucide-react": "^0.383.0",

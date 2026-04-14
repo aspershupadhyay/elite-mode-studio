@@ -263,3 +263,14 @@ export function loadFileIntoFrame(frame: FabricObject, file: File, onDone?: () =
   }
   reader.readAsDataURL(file)
 }
+
+// ── Load image from a URL (file:// or https://), then apply to frame ──────────
+export function loadURLIntoFrame(frame: FabricObject, url: string, onDone?: () => void): void {
+  const imgEl = new window.Image()
+  imgEl.onload = () => {
+    applyImageToFrame(frame, imgEl)
+    onDone?.()
+  }
+  imgEl.onerror = () => { console.error('[loadURLIntoFrame] failed to load:', url.slice(0, 80)) }
+  imgEl.src = url
+}

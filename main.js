@@ -852,10 +852,92 @@ electron_1.ipcMain.handle('read-local-image', (_event, filePath) => {
         return null;
     }
 });
+// ── MCP canvas bridge HTTP server (port 8001) ──────────────────────────────
+// MCP server (mcp/server.ts) posts canvas + app commands here.
+// We forward them to the renderer via IPC and return the result.
+const MCP_BRIDGE_PORT = 8001;
+const pendingMcpRequests = new Map();
+const pendingAppRequests = new Map();
+electron_1.ipcMain.on('canvas:result', (_event, result) => {
+    const pending = pendingMcpRequests.get(result.requestId);
+    if (!pending)
+        return;
+    pendingMcpRequests.delete(result.requestId);
+    if (result.success)
+        pending.resolve(result.data);
+    else
+        pending.reject(new Error(result.error ?? 'canvas command failed'));
+});
+electron_1.ipcMain.on('app:result', (_event, result) => {
+    const pending = pendingAppRequests.get(result.requestId);
+    if (!pending)
+        return;
+    pendingAppRequests.delete(result.requestId);
+    if (result.success)
+        pending.resolve(result.data);
+    else
+        pending.reject(new Error(result.error ?? 'app command failed'));
+});
+function forwardCommand(pendingMap, ipcChannel, cmd, res) {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+        res.writeHead(503).end(JSON.stringify({ error: 'app not ready' }));
+        return;
+    }
+    // 180 s timeout — image generation can take 1-3 minutes
+    const TIMEOUT_MS = cmd.tool === 'generate_image' || cmd.tool === 'replace_image' ? 360000 : 30000;
+    const timeout = setTimeout(() => {
+        pendingMap.delete(cmd.requestId);
+        res.writeHead(504).end(JSON.stringify({ error: 'command timed out' }));
+    }, TIMEOUT_MS);
+    pendingMap.set(cmd.requestId, {
+        resolve: (data) => {
+            clearTimeout(timeout);
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: true, data }));
+        },
+        reject: (err) => {
+            clearTimeout(timeout);
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: false, error: err.message }));
+        },
+    });
+    mainWindow.webContents.send(ipcChannel, cmd);
+}
+function startMcpBridge() {
+    const bridge = http_1.default.createServer((req, res) => {
+        const isCanvas = req.method === 'POST' && req.url === '/canvas-command';
+        const isApp = req.method === 'POST' && req.url === '/app-command';
+        if (!isCanvas && !isApp) {
+            res.writeHead(404).end(JSON.stringify({ error: 'not found' }));
+            return;
+        }
+        let body = '';
+        req.on('data', (chunk) => { body += chunk.toString(); });
+        req.on('end', () => {
+            let cmd;
+            try {
+                cmd = JSON.parse(body);
+            }
+            catch {
+                res.writeHead(400).end(JSON.stringify({ error: 'invalid JSON' }));
+                return;
+            }
+            if (isCanvas)
+                forwardCommand(pendingMcpRequests, 'canvas:command', cmd, res);
+            else
+                forwardCommand(pendingAppRequests, 'app:command', cmd, res);
+        });
+    });
+    bridge.listen(MCP_BRIDGE_PORT, '127.0.0.1', () => {
+        console.log(`[mcp-bridge] HTTP bridge listening on port ${MCP_BRIDGE_PORT}`);
+    });
+    bridge.on('error', (err) => console.error('[mcp-bridge] server error:', err));
+}
 // ── App lifecycle ──────────────────────────────────────────────────────────
 electron_1.app.whenReady().then(async () => {
     void startBackend();
     createWindow();
+    startMcpBridge();
     // Wait for backend in the background; notify renderer when it's up
     waitForBackend(45000).then(() => notifyBackendStatus('up'));
     ensureCallbackServer();

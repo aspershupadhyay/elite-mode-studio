@@ -794,10 +794,94 @@ ipcMain.handle('read-local-image', (_event: IpcMainInvokeEvent, filePath: string
   }
 })
 
+// ── MCP canvas bridge HTTP server (port 8001) ──────────────────────────────
+// MCP server (mcp/server.ts) posts canvas + app commands here.
+// We forward them to the renderer via IPC and return the result.
+const MCP_BRIDGE_PORT = 8001
+const pendingMcpRequests    = new Map<string, { resolve: (v: unknown) => void; reject: (e: Error) => void }>()
+const pendingAppRequests    = new Map<string, { resolve: (v: unknown) => void; reject: (e: Error) => void }>()
+
+ipcMain.on('canvas:result', (_event, result: { requestId: string; success: boolean; data?: unknown; error?: string }) => {
+  const pending = pendingMcpRequests.get(result.requestId)
+  if (!pending) return
+  pendingMcpRequests.delete(result.requestId)
+  if (result.success) pending.resolve(result.data)
+  else pending.reject(new Error(result.error ?? 'canvas command failed'))
+})
+
+ipcMain.on('app:result', (_event, result: { requestId: string; success: boolean; data?: unknown; error?: string }) => {
+  const pending = pendingAppRequests.get(result.requestId)
+  if (!pending) return
+  pendingAppRequests.delete(result.requestId)
+  if (result.success) pending.resolve(result.data)
+  else pending.reject(new Error(result.error ?? 'app command failed'))
+})
+
+function forwardCommand(
+  pendingMap: Map<string, { resolve: (v: unknown) => void; reject: (e: Error) => void }>,
+  ipcChannel: string,
+  cmd: { requestId: string; tool: string; params: Record<string, unknown> },
+  res: http.ServerResponse,
+): void {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    res.writeHead(503).end(JSON.stringify({ error: 'app not ready' }))
+    return
+  }
+  // 180 s timeout — image generation can take 1-3 minutes
+  const TIMEOUT_MS = cmd.tool === 'generate_image' || cmd.tool === 'replace_image' ? 360_000 : 30_000
+  const timeout = setTimeout(() => {
+    pendingMap.delete(cmd.requestId)
+    res.writeHead(504).end(JSON.stringify({ error: 'command timed out' }))
+  }, TIMEOUT_MS)
+
+  pendingMap.set(cmd.requestId, {
+    resolve: (data) => {
+      clearTimeout(timeout)
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ success: true, data }))
+    },
+    reject: (err) => {
+      clearTimeout(timeout)
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ success: false, error: err.message }))
+    },
+  })
+
+  mainWindow.webContents.send(ipcChannel, cmd)
+}
+
+function startMcpBridge(): void {
+  const bridge = http.createServer((req, res) => {
+    const isCanvas = req.method === 'POST' && req.url === '/canvas-command'
+    const isApp    = req.method === 'POST' && req.url === '/app-command'
+    if (!isCanvas && !isApp) {
+      res.writeHead(404).end(JSON.stringify({ error: 'not found' }))
+      return
+    }
+    let body = ''
+    req.on('data', (chunk: Buffer) => { body += chunk.toString() })
+    req.on('end', () => {
+      let cmd: { requestId: string; tool: string; params: Record<string, unknown> }
+      try { cmd = JSON.parse(body) } catch {
+        res.writeHead(400).end(JSON.stringify({ error: 'invalid JSON' }))
+        return
+      }
+      if (isCanvas) forwardCommand(pendingMcpRequests, 'canvas:command', cmd, res)
+      else           forwardCommand(pendingAppRequests,  'app:command',    cmd, res)
+    })
+  })
+
+  bridge.listen(MCP_BRIDGE_PORT, '127.0.0.1', () => {
+    console.log(`[mcp-bridge] HTTP bridge listening on port ${MCP_BRIDGE_PORT}`)
+  })
+  bridge.on('error', (err) => console.error('[mcp-bridge] server error:', err))
+}
+
 // ── App lifecycle ──────────────────────────────────────────────────────────
 app.whenReady().then(async () => {
   void startBackend()
   createWindow()
+  startMcpBridge()
   // Wait for backend in the background; notify renderer when it's up
   waitForBackend(45_000).then(() => notifyBackendStatus('up'))
   ensureCallbackServer()

@@ -322,6 +322,80 @@ export default function App(): React.ReactElement {
     void checkHealth()
   }, [checkHealth])
 
+  // ── MCP app-level bridge ─────────────────────────────────────────────────
+  // Handles app:command IPC events from the Electron main process bridge.
+  // Tools: navigate_to, get_app_state, get_settings, save_api_keys, update_appearance
+  useEffect(() => {
+    const { onAppCommand, sendAppResult } = window.api ?? {}
+    if (!onAppCommand || !sendAppResult) return
+
+    const cleanup = onAppCommand(async (cmd) => {
+      const { requestId, tool, params } = cmd
+      try {
+        let data: unknown = null
+
+        if (tool === 'navigate_to') {
+          const validPages = ['web', 'doc', 'forge', 'studio', 'templates', 'history', 'settings']
+          const target = String(params.page || '')
+          if (!validPages.includes(target)) throw new Error(`invalid page "${target}". Valid: ${validPages.join(', ')}`)
+          setPage(target as import('./components/Sidebar').PageId)
+          data = { navigated: target }
+
+        } else if (tool === 'get_app_state') {
+          data = {
+            currentPage: page,
+            backendStatus,
+            theme: localStorage.getItem('app_theme') ?? 'dark',
+            appearance: (() => { try { return JSON.parse(localStorage.getItem('app_appearance') ?? '{}') } catch { return {} } })(),
+          }
+
+        } else if (tool === 'get_settings') {
+          const setupResult = await window.api.setupCheck?.().catch(() => null)
+          data = {
+            configured:  setupResult?.configured ?? false,
+            missingKeys: setupResult?.missingKeys ?? [],
+            chatGptUrl: (await window.api.getImageGenConfig?.().catch(() => null))?.chatGptUrl ?? null,
+          }
+
+        } else if (tool === 'save_api_keys') {
+          const result = await window.api.setupSaveConfig({
+            nvidiaKey: String(params.nvidiaKey ?? ''),
+            tavilyKey: String(params.tavilyKey ?? ''),
+          })
+          if (!result.ok) throw new Error(result.error ?? 'save failed')
+          window.dispatchEvent(new Event('apiKeySaved'))
+          data = { saved: true }
+
+        } else if (tool === 'set_chatgpt_url') {
+          await window.api.setImageGenUrl?.(String(params.url ?? ''))
+          data = { url: params.url }
+
+        } else if (tool === 'update_appearance') {
+          const current = (() => { try { return JSON.parse(localStorage.getItem('app_appearance') ?? '{}') } catch { return {} } })() as Record<string, unknown>
+          const merged = { ...current, ...params }
+          localStorage.setItem('app_appearance', JSON.stringify(merged))
+          if (params.theme) {
+            localStorage.setItem('app_theme', String(params.theme))
+            if (params.theme === 'light') document.documentElement.setAttribute('data-theme', 'light')
+            else document.documentElement.removeAttribute('data-theme')
+          }
+          window.dispatchEvent(new Event('appearanceChange'))
+          data = { applied: merged }
+
+        } else {
+          throw new Error(`unknown app tool "${tool}". Available: navigate_to, get_app_state, get_settings, save_api_keys, set_chatgpt_url, update_appearance`)
+        }
+
+        sendAppResult({ requestId, success: true, data })
+      } catch (err) {
+        sendAppResult({ requestId, success: false, error: err instanceof Error ? err.message : String(err) })
+      }
+    })
+
+    return cleanup
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, backendStatus])
+
   const handleLoadTemplate = (templateData: LoadTemplatePayload): void => {
     setPending({ ...templateData, _ts: Date.now() })
     setPage('studio')

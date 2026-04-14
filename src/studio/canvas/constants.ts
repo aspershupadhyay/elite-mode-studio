@@ -35,6 +35,8 @@ export const ELITE_CUSTOM_PROPS: string[] = [
   'eliteBlendMode',
   // Gradient overlay config
   'eliteGradColor', 'eliteGradDir', 'eliteGradStrength',
+  // Stable persistent element ID (smart layer naming)
+  'eliteId',
 ]
 
 // ── Accent colour (theme-aware) ───────────────────────────────────────────────

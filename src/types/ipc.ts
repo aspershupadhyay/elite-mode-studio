@@ -174,6 +174,36 @@ export interface SetupSaveRequest {
   tavilyKey: string
 }
 
+// ── Canvas MCP bridge ──────────────────────────────────────────────────────
+
+export interface CanvasCommandRequest {
+  requestId: string
+  tool: string
+  params: Record<string, unknown>
+}
+
+export interface CanvasCommandResponse {
+  requestId: string
+  success: boolean
+  data?: unknown
+  error?: string
+}
+
+// ── App-level MCP bridge ───────────────────────────────────────────────────
+
+export interface AppCommandRequest {
+  requestId: string
+  tool: string
+  params: Record<string, unknown>
+}
+
+export interface AppCommandResponse {
+  requestId: string
+  success: boolean
+  data?: unknown
+  error?: string
+}
+
 // ── Channel map (type-level registry) ─────────────────────────────────────
 
 export type IpcChannels = {
@@ -221,5 +251,9 @@ export type IpcChannels = {
   'setup:save-config': {
     request: SetupSaveRequest
     response: { ok: boolean; error?: string }
+  }
+  'canvas:result': {
+    request: CanvasCommandResponse
+    response: void
   }
 }

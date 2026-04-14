@@ -78,6 +78,8 @@ export interface CanvasHandle {
   addFrame: (shape: string) => void
   FRAME_SHAPES: Record<string, unknown>
   addIconToCanvas: (iconData: { path: string | string[]; label: string; id: string }, color?: string, size?: number) => void
+  addImageFromURL: (url: string, x?: number, y?: number, w?: number, h?: number) => void
+  loadImageIntoFrameFromURL: (frame: FabricObject, url: string) => void
 
   // Selection
   deleteSelected: () => void

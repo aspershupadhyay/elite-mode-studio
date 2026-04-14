@@ -46,7 +46,7 @@ const FontSizePill = memo(function FontSizePill({ apply }: FontSizePillProps): J
         onTouchEnd={stopStep}
         style={{
           width: 26, height: 26, borderRadius: 6, border: 'none', cursor: 'pointer',
-          background: 'transparent', color: 'rgba(255,255,255,0.5)',
+          background: 'transparent', color: 'var(--tb-text2)',
           display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
           fontSize: 18, fontWeight: 300, lineHeight: 1,
         }}
@@ -55,7 +55,7 @@ const FontSizePill = memo(function FontSizePill({ apply }: FontSizePillProps): J
       <div style={{ position: 'relative', width: 30 }}>
         <span key={sizeKey} style={{
           display: 'block', textAlign: 'center', fontSize: 12,
-          color: mixed ? 'rgba(255,255,255,0.45)' : '#EAEAEA',
+          color: mixed ? 'var(--tb-text2)' : 'var(--tb-text)',
           fontFamily: 'monospace', lineHeight: '28px', pointerEvents: 'none',
           animation: 'sz-pop .1s cubic-bezier(.16,1,.3,1)',
         }}>{localSize}</span>
@@ -86,7 +86,7 @@ const FontSizePill = memo(function FontSizePill({ apply }: FontSizePillProps): J
         onTouchEnd={stopStep}
         style={{
           width: 26, height: 26, borderRadius: 6, border: 'none', cursor: 'pointer',
-          background: 'transparent', color: 'rgba(255,255,255,0.5)',
+          background: 'transparent', color: 'var(--tb-text2)',
           display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
           fontSize: 14, fontWeight: 300, lineHeight: 1,
         }}

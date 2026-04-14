@@ -10,7 +10,7 @@ import { FONT_REGISTRY, loadGoogleFont } from '../../data/fonts'
 import { Pill, Tray, ResetBtn, accentRgb } from './shared'
 
 const accentHex = (): string =>
-  getComputedStyle(document.documentElement).getPropertyValue('--green').trim() || '#0BDA76'
+  getComputedStyle(document.documentElement).getPropertyValue('--green').trim() || '#C96A42'
 
 export interface FontFamilyPillProps {
   apply: (styles: Record<string, string | number | boolean | null>) => void
@@ -41,12 +41,12 @@ const FontFamilyPill = memo(function FontFamilyPill({ apply }: FontFamilyPillPro
         style={{ display: 'flex', alignItems: 'center', gap: 3, height: 28, padding: '0 4px', background: 'transparent', border: 'none', cursor: 'pointer' }}
       >
         <span style={{
-          fontSize: 12, color: mixed ? 'rgba(255,255,255,0.5)' : '#EAEAEA',
+          fontSize: 12, color: mixed ? 'var(--tb-text2)' : 'var(--tb-text)',
           fontFamily: fontFamily ? `${fontFamily}, sans-serif` : 'sans-serif',
           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 84,
         }}>{currentFont}</span>
         <svg width="8" height="5" viewBox="0 0 8 5" fill="none" style={{ flexShrink: 0 }}>
-          <path d="M1 1l3 3 3-3" stroke="rgba(255,255,255,0.3)" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M1 1l3 3 3-3" style={{ stroke: 'var(--tb-text2)' }} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
         </svg>
       </button>
       {override && <ResetBtn onClick={() => apply({ fontFamily: null })}/>}
@@ -56,26 +56,37 @@ const FontFamilyPill = memo(function FontFamilyPill({ apply }: FontFamilyPillPro
           <input autoFocus value={fontQ} onChange={e => setFontQ(e.target.value)}
             placeholder="Search fonts…" onMouseDown={(e: MouseEvent<HTMLInputElement>) => e.stopPropagation()}
             style={{
-              width: '100%', padding: '5px 8px', background: 'rgba(255,255,255,0.05)',
-              border: '1px solid rgba(255,255,255,0.1)', borderRadius: 7,
-              color: '#EAEAEA', fontSize: 11, outline: 'none', marginBottom: 5,
+              width: '100%', padding: '6px 10px',
+              background: 'var(--tb-input-bg)',
+              border: '1px solid var(--tb-input-border)', borderRadius: 7,
+              color: 'var(--tb-text)', fontSize: 11, outline: 'none', marginBottom: 6,
               boxSizing: 'border-box', fontFamily: 'inherit',
             }}
           />
           <div style={{ overflowY: 'auto', flex: 1 }}>
-            {filteredFonts.map((f: { family: string }) => (
-              <button key={f.family} onMouseDown={(e: MouseEvent<HTMLButtonElement>) => e.preventDefault()}
-                onMouseEnter={() => loadGoogleFont(f.family)}
-                onClick={() => { loadGoogleFont(f.family); apply({ fontFamily: `'${f.family}', sans-serif` }); setOpen(null); setFontQ('') }}
-                style={{
-                  width: '100%', padding: '5px 8px', border: 'none', cursor: 'pointer',
-                  textAlign: 'left', display: 'block', borderRadius: 5,
-                  background: currentFont === f.family ? `rgba(${RGB}, 0.14)` : 'transparent',
-                  color: currentFont === f.family ? ACCENT : '#EAEAEA',
-                  fontSize: 12, fontFamily: `'${f.family}', sans-serif`,
-                }}
-              >{f.family}</button>
-            ))}
+            {filteredFonts.map((f: { family: string }) => {
+              const isSelected = currentFont === f.family
+              return (
+                <button key={f.family} onMouseDown={(e: MouseEvent<HTMLButtonElement>) => e.preventDefault()}
+                  onMouseEnter={(e: MouseEvent<HTMLButtonElement>) => {
+                    loadGoogleFont(f.family)
+                    if (!isSelected) e.currentTarget.style.background = 'var(--tb-hover)'
+                  }}
+                  onMouseLeave={(e: MouseEvent<HTMLButtonElement>) => {
+                    if (!isSelected) e.currentTarget.style.background = 'transparent'
+                  }}
+                  onClick={() => { loadGoogleFont(f.family); apply({ fontFamily: `'${f.family}', sans-serif` }); setOpen(null); setFontQ('') }}
+                  style={{
+                    width: '100%', padding: '6px 10px', border: 'none', cursor: 'pointer',
+                    textAlign: 'left', display: 'block', borderRadius: 6,
+                    background: isSelected ? `rgba(${RGB}, 0.15)` : 'transparent',
+                    color: isSelected ? ACCENT : 'var(--tb-text)',
+                    fontSize: 12, fontFamily: `'${f.family}', sans-serif`,
+                    transition: 'background .1s',
+                  }}
+                >{f.family}</button>
+              )
+            })}
           </div>
         </Tray>
       )}

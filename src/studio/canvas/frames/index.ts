@@ -18,7 +18,7 @@ import { FRAME_SHAPES } from './frame-shapes'
 // ── Re-exports ────────────────────────────────────────────────────────────────
 export type { FrameShapeConfig } from './frame-shapes'
 export { FRAME_SHAPES, LETTERS, DIGITS, getShapeConfig } from './frame-shapes'
-export { applyImageToFrame, loadFileIntoFrame } from './frame-image'
+export { applyImageToFrame, loadFileIntoFrame, loadURLIntoFrame } from './frame-image'
 export { refitFrame, clearFrameImage, findFrameAtPoint, highlightFrame, clearFrameHighlight } from './frame-utils'
 
 // ── Frame placeholder gradient (shown when no image is loaded) ────────────────

@@ -8,9 +8,8 @@ import {
 } from '../../text/TextStyleStore'
 import { Pill, Tray, ResetBtn, accentRgb } from './shared'
 
-// Read live accent hex from CSS custom property
 const accentHex = (): string =>
-  getComputedStyle(document.documentElement).getPropertyValue('--green').trim() || '#0BDA76'
+  getComputedStyle(document.documentElement).getPropertyValue('--green').trim() || '#C96A42'
 
 const COLOR_SWATCHES = ['#EAEAEA', '#0BDA76', '#FFD93D', '#4488FF', '#FF4444', '#E879F9']
 
@@ -76,26 +75,26 @@ const ColorPill = memo(function ColorPill({ apply }: ColorPillProps): JSX.Elemen
       >
         <span style={{
           fontSize: 14, fontWeight: 700, lineHeight: 1, fontFamily: 'sans-serif',
-          color: mixed ? 'rgba(255,255,255,0.6)' : (fill || '#EAEAEA'),
+          color: mixed ? 'var(--tb-text2)' : (fill || 'var(--tb-text)'),
         }}>A</span>
         {mixed
           ? <div style={{ width: 14, height: 2.5, borderRadius: 2,
               background: 'linear-gradient(90deg, #FF4444, #FFD93D, #0BDA76, #4488FF)' }}/>
-          : <div style={{ width: 14, height: 2.5, borderRadius: 2, background: fill || '#EAEAEA' }}/>
+          : <div style={{ width: 14, height: 2.5, borderRadius: 2, background: fill || 'var(--tb-text)' }}/>
         }
       </button>
       {override && <ResetBtn onClick={() => apply({ fill: null })}/>}
 
       {open && (
         <Tray align="left" style={{ width: 180 }}>
-          <p style={{ margin: '0 0 7px', fontSize: 9, color: 'rgba(255,255,255,0.28)', fontFamily: 'sans-serif', textTransform: 'uppercase', letterSpacing: '.07em' }}>Color</p>
+          <p style={{ margin: '0 0 7px', fontSize: 9, color: 'var(--tb-text3)', fontFamily: 'sans-serif', textTransform: 'uppercase', letterSpacing: '.07em' }}>Color</p>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 5, marginBottom: 8 }}>
             {COLOR_SWATCHES.map(c => (
               <button key={c} onMouseDown={(e: MouseEvent<HTMLButtonElement>) => e.preventDefault()}
                 onClick={() => { applyColor(c, 100); setOpen(null) }}
                 style={{
                   width: 20, height: 20, borderRadius: '50%', border: 'none', background: c, cursor: 'pointer',
-                  outline: baseHex.toLowerCase() === c.toLowerCase() ? '2px solid #fff' : '2px solid transparent',
+                  outline: baseHex.toLowerCase() === c.toLowerCase() ? '2px solid var(--tb-text)' : '2px solid transparent',
                   outlineOffset: 1.5, transition: 'transform .1s',
                 }}
                 onMouseEnter={(e: MouseEvent<HTMLButtonElement>) => { e.currentTarget.style.transform = 'scale(1.22)' }}
@@ -104,27 +103,25 @@ const ColorPill = memo(function ColorPill({ apply }: ColorPillProps): JSX.Elemen
             ))}
           </div>
 
-          {/* Custom color picker */}
           <label style={{
             display: 'flex', alignItems: 'center', gap: 7, cursor: 'pointer',
             padding: '5px 7px', borderRadius: 7, marginBottom: 8,
-            background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)',
+            background: 'var(--tb-input-bg)', border: '1px solid var(--tb-input-border)',
           }}>
             <div style={{ width: 18, height: 18, borderRadius: '50%', flexShrink: 0,
               background: 'conic-gradient(#ff4444,#ffaa00,#ffff00,#00cc44,#4488ff,#8844ff,#ff4444)',
-              border: '1px solid rgba(255,255,255,0.12)' }}/>
-            <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', fontFamily: 'sans-serif' }}>Custom</span>
+              border: '1px solid var(--tb-sep)' }}/>
+            <span style={{ fontSize: 10, color: 'var(--tb-text2)', fontFamily: 'sans-serif' }}>Custom</span>
             <input type="color" value={baseHex.startsWith('#') ? baseHex : '#EAEAEA'}
               onChange={e => applyColor(e.target.value)}
               style={{ position: 'absolute', opacity: 0, width: 0, height: 0 }}
             />
           </label>
 
-          {/* Opacity slider */}
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-              <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.28)', fontFamily: 'sans-serif', textTransform: 'uppercase', letterSpacing: '.07em' }}>Opacity</span>
-              <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', fontFamily: 'monospace' }}>{opacity}%</span>
+              <span style={{ fontSize: 9, color: 'var(--tb-text3)', fontFamily: 'sans-serif', textTransform: 'uppercase', letterSpacing: '.07em' }}>Opacity</span>
+              <span style={{ fontSize: 10, color: 'var(--tb-text2)', fontFamily: 'monospace' }}>{opacity}%</span>
             </div>
             <div style={{ position: 'relative', height: 14, display: 'flex', alignItems: 'center' }}>
               {/* Checkerboard + color gradient track */}

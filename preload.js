@@ -72,4 +72,22 @@ electron_1.contextBridge.exposeInMainWorld('api', {
         });
         return () => handlers.forEach(({ evt, h }) => electron_1.ipcRenderer.removeListener(evt, h));
     },
+    // ── MCP canvas bridge ────────────────────────────────────────────────────
+    onCanvasCommand: (cb) => {
+        const handler = (_, cmd) => cb(cmd);
+        electron_1.ipcRenderer.on('canvas:command', handler);
+        return () => electron_1.ipcRenderer.removeListener('canvas:command', handler);
+    },
+    sendCanvasResult: (result) => {
+        electron_1.ipcRenderer.send('canvas:result', result);
+    },
+    // ── MCP app-level bridge ─────────────────────────────────────────────────
+    onAppCommand: (cb) => {
+        const handler = (_, cmd) => cb(cmd);
+        electron_1.ipcRenderer.on('app:command', handler);
+        return () => electron_1.ipcRenderer.removeListener('app:command', handler);
+    },
+    sendAppResult: (result) => {
+        electron_1.ipcRenderer.send('app:result', result);
+    },
 });

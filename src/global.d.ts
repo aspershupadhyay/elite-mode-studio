@@ -9,6 +9,8 @@ import type {
   AuthStartRequest, AuthStartResult, AuthCompleteEvent, AuthValidateResult,
   StartImageGenRequest, StartImageGenResult, ImageGenProgress,
   SetupCheckResult, SetupSaveRequest,
+  CanvasCommandRequest, CanvasCommandResponse,
+  AppCommandRequest, AppCommandResponse,
 } from './types/ipc'
 import type { JSX as ReactJSX } from 'react'
 
@@ -100,6 +102,12 @@ declare global {
       // Backend lifecycle
       restartBackend?:   () => Promise<void>
       onBackendStatus?:  (cb: (status: 'starting' | 'up' | 'crashed') => void) => (() => void)
+      // MCP canvas bridge
+      onCanvasCommand?:  (cb: (cmd: CanvasCommandRequest) => void) => (() => void)
+      sendCanvasResult?: (result: CanvasCommandResponse) => void
+      // MCP app-level bridge
+      onAppCommand?:     (cb: (cmd: AppCommandRequest) => void) => (() => void)
+      sendAppResult?:    (result: AppCommandResponse) => void
     }
   }
 

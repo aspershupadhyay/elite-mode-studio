@@ -8,7 +8,9 @@ import ContextMenu from '../../studio/editor/ContextMenu'
 import GuideOverlay from '../../studio/components/GuideOverlay'
 import RulerGuides from '../../studio/components/RulerGuides'
 import PagesPanel from '../../studio/components/PagesPanel'
+import ShortcutsModal from '../../studio/components/ShortcutsModal'
 import { preloadPopularFonts } from '../../studio/data/fonts'
+import { useCanvasBridge, type PageOps } from '../../studio/mcp/canvasBridge'
 import FloatingTextToolbar from '../../studio/editor/FloatingTextToolbar'
 import PostElementsSelector from '../../studio/editor/PostElementsSelector'
 import { applyGeneratedContentFromProfile, injectGeneratedImage } from '../../studio/editor/canvas-core/content-apply'
@@ -136,6 +138,7 @@ export default function DesignStudio({
   const studioRef        = useRef<HTMLDivElement | null>(null)
   const switchingRef     = useRef<boolean>(false)
 
+
   const [canvasSize, setCanvasSize]             = useState<CanvasSize>({ width: 1080, height: 1350 })
   const [selectedObject, setSelectedObject]     = useState<unknown>(null)
   const [selectionVersion, setSelectionVersion] = useState<number>(0)
@@ -157,14 +160,17 @@ export default function DesignStudio({
   const [pages, setPages]             = useState<Page[]>([makePage(0)])
   const [activePage, setActivePage]   = useState<number>(0)
   const [pagesCollapsed, setPagesCollapsed]   = useState<boolean>(false)
+  const [showShortcutsModal, setShowShortcutsModal] = useState<boolean>(false)
   const [layersCollapsed, setLayersCollapsed] = useState<boolean>(() => {
     const saved = localStorage.getItem('studio_layers_collapsed')
     return saved !== null ? saved === 'true' : true
   })
-  const pagesRef      = useRef<Page[]>([])
-  const activePageRef = useRef<number>(0)
-  useEffect(() => { pagesRef.current = pages }, [pages])
-  useEffect(() => { activePageRef.current = activePage }, [activePage])
+  const pagesRef         = useRef<Page[]>([])
+  const activePageRef    = useRef<number>(0)
+  const selectedObjRef   = useRef<unknown>(null)
+  useEffect(() => { pagesRef.current      = pages },         [pages])
+  useEffect(() => { activePageRef.current = activePage },    [activePage])
+  useEffect(() => { selectedObjRef.current = selectedObject }, [selectedObject])
 
   const batchTemplateRef = useRef<string | null>(null)
 
@@ -382,6 +388,9 @@ export default function DesignStudio({
     const target = pagesRef.current[newIdx]
     if (!target) { switchingRef.current = false; return }
 
+    // Update ref BEFORE canvas ops so any handleHistoryChange triggered during
+    // importJSON/.then captures the thumbnail for the correct (new) page
+    activePageRef.current = newIdx
     setActivePage(newIdx)
 
     if (target.canvasJSON) {
@@ -406,7 +415,6 @@ export default function DesignStudio({
     }
 
     switchingRef.current = false
-    setInjectMsg({ msg: `Page ${newIdx + 1} of ${pagesRef.current.length}` })
   }, [saveCurrentPage, applyContent])
 
   // ── Add blank page ────────────────────────────────────────────────────────
@@ -417,8 +425,9 @@ export default function DesignStudio({
     const newPage = makePage(newIdx)
     setPages(prev => [...prev, newPage])
     setTimeout(() => {
+      // Update ref BEFORE canvas ops so handleHistoryChange captures thumb for the right page
+      activePageRef.current = newIdx
       setActivePage(newIdx)
-      // Blank = clear canvas completely, no default elements, no template
       canvasHandleRef.current?.clearCanvas?.()
     }, 100)
   }, [saveCurrentPage])
@@ -429,6 +438,8 @@ export default function DesignStudio({
     setPages(prev => {
       const next = prev.filter((_, i) => i !== idx)
       const newActive = Math.min(activePageRef.current, next.length - 1)
+      // Update ref BEFORE canvas ops so handleHistoryChange captures thumb for the right page
+      activePageRef.current = newActive
       setActivePage(newActive)
       const target = next[newActive]
       if (target) {
@@ -471,6 +482,8 @@ export default function DesignStudio({
     const newIdx = idx + 1
     setPages(prev => { const n = [...prev]; n.splice(newIdx, 0, copy); return n })
     setTimeout(() => {
+      // Update ref BEFORE canvas ops so handleHistoryChange captures thumb for the right page
+      activePageRef.current = newIdx
       setActivePage(newIdx)
       if (copy.canvasJSON) {
         canvasHandleRef.current?.importJSON(copy.canvasJSON)
@@ -516,10 +529,28 @@ export default function DesignStudio({
     newPage.canvasJSON = templateJSON
     setPages(prev => [...prev, newPage])
     setTimeout(() => {
+      activePageRef.current = newIdx
       setActivePage(newIdx)
       canvasHandleRef.current?.importJSON(templateJSON)
     }, 100)
   }, [saveCurrentPage])
+
+  // ── MCP canvas bridge — mounted here so all page callbacks are defined ──────
+
+  const mcpGetPages = useCallback(() =>
+    pagesRef.current.map((p, i) => ({ index: i, label: p.label, isActive: i === activePageRef.current }))
+  , [])
+  const mcpGetActivePage = useCallback(() => activePageRef.current, [])
+
+  useCanvasBridge(canvasHandleRef, {
+    addBlankPage,
+    duplicatePage,
+    switchPage,
+    deletePage,
+    renamePage,
+    getPages:      mcpGetPages,
+    getActivePage: mcpGetActivePage,
+  })
 
   // ── Page keyboard shortcuts ────────────────────────────────────────────────
 
@@ -528,14 +559,77 @@ export default function DesignStudio({
       const tag = (e.target as HTMLElement)?.tagName
       if (['INPUT', 'TEXTAREA'].includes(tag)) return
       const isMeta = e.metaKey || e.ctrlKey
-      // Cmd+Shift+N — add blank page (no conflict in keyboard.ts)
+
+      // Helper: is the user actively editing a Fabric Textbox?
+      const isFabricEditing = !!(canvasHandleRef.current?.getCanvas()?.getActiveObject() as ({ isEditing?: boolean } | null))?.isEditing
+
+      // Cmd+/ — open/close shortcuts modal (works on all platforms)
+      if (isMeta && e.key === '/') { e.preventDefault(); setShowShortcutsModal(v => !v); return }
+
+      // F11 — toggle fullscreen
+      if (e.key === 'F11') {
+        e.preventDefault()
+        if (!document.fullscreenElement) {
+          document.documentElement.requestFullscreen().catch(() => {})
+        } else {
+          document.exitFullscreen().catch(() => {})
+        }
+        return
+      }
+
+      // Cmd+Enter — add blank page (only when not editing text)
+      if (isMeta && (e.key === 'Enter' || e.key === 'Return') && !isFabricEditing) {
+        e.preventDefault(); addBlankPage(); return
+      }
+
+      // Ctrl+Shift+P — toggle pages panel
+      if (isMeta && e.shiftKey && e.key === 'P') { e.preventDefault(); setPagesCollapsed(v => !v); return }
+
+      // Cmd+Shift+N — add blank page
       if (isMeta && e.shiftKey && e.key === 'N') { e.preventDefault(); addBlankPage(); return }
-      // Cmd+Shift+D — duplicate current page (keyboard.ts uses Cmd+D lowercase for object dup)
+
+      // Cmd+Shift+D — duplicate current page
       if (isMeta && e.shiftKey && e.key === 'D') { e.preventDefault(); duplicatePage(activePageRef.current); return }
+
+      // Ctrl+Shift+Backspace — delete current page (only if >1 page)
+      if (isMeta && e.shiftKey && !e.altKey && e.key === 'Backspace' && !isFabricEditing) {
+        e.preventDefault()
+        if (pagesRef.current.length > 1) deletePage(activePageRef.current)
+        return
+      }
+
+      // Ctrl+Shift+Alt+Backspace — delete ALL pages (resets to 1 blank)
+      if (isMeta && e.shiftKey && e.altKey && e.key === 'Backspace' && !isFabricEditing) {
+        e.preventDefault()
+        canvasHandleRef.current?.clearCanvas?.()
+        setPages([makePage(0)])
+        setActivePage(0)
+        activePageRef.current = 0
+        return
+      }
+
+      // Arrow Left/Right — navigate pages when nothing is selected and not editing text
+      if (!isMeta && !e.shiftKey && !isFabricEditing
+          && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')
+          && pagesRef.current.length > 1
+          && !selectedObjRef.current) {
+        if (e.key === 'ArrowRight') {
+          e.preventDefault()
+          const next = Math.min(activePageRef.current + 1, pagesRef.current.length - 1)
+          if (next !== activePageRef.current) void switchPage(next)
+          return
+        }
+        if (e.key === 'ArrowLeft') {
+          e.preventDefault()
+          const prev = Math.max(activePageRef.current - 1, 0)
+          if (prev !== activePageRef.current) void switchPage(prev)
+          return
+        }
+      }
     }
     window.addEventListener('keydown', handler)
     return (): void => { window.removeEventListener('keydown', handler) }
-  }, [addBlankPage, duplicatePage])
+  }, [addBlankPage, duplicatePage, switchPage, deletePage])
 
   // ── Load template from gallery ────────────────────────────────────────────
 
@@ -965,6 +1059,10 @@ export default function DesignStudio({
       )}
 
       <FloatingTextToolbar canvasRef={canvasHandleRef} />
+
+      {showShortcutsModal && (
+        <ShortcutsModal onClose={() => setShowShortcutsModal(false)} />
+      )}
 
       {pendingApplyArgs && (
         <PostElementsSelector

@@ -14,7 +14,7 @@
  */
 
 import {
-  useEffect, useRef, useState, useCallback, useImperativeHandle, forwardRef,
+  useEffect, useRef, useCallback, useImperativeHandle, forwardRef,
 } from 'react'
 import * as fabric from 'fabric'
 import '@/types/fabric-custom'
@@ -35,7 +35,7 @@ import { pasteFromSystemClipboard, copyToSystemClipboard } from '../canvas/clipb
 import {
   FRAME_SHAPES,
   addFrame, applyImageToFrame, refitFrame, clearFrameImage,
-  loadFileIntoFrame, findFrameAtPoint, highlightFrame, clearFrameHighlight,
+  loadFileIntoFrame, loadURLIntoFrame, findFrameAtPoint, highlightFrame, clearFrameHighlight,
 } from '../canvas/frames'
 import { findSnaps, applySnap, buildResizeGuides } from '../canvas/snapping'
 import { registerResizeCursor } from '../canvas/resize-zone'
@@ -93,6 +93,15 @@ const DesignCanvas = forwardRef<CanvasHandle, CanvasProps>((
   const zoomRef = useRef(0.8)
   const panRef  = useRef({ x: 0, y: 0 })
 
+  // Cached container rect — avoids forced sync reflow on every wheel event.
+  // Invalidated on resize; lazily re-measured on next wheel.
+  const containerRectCache = useRef<{ left: number; top: number; width: number; height: number } | null>(null)
+
+  // Canvas design dimensions kept in a ref so handleWheel (stable useCallback)
+  // can read them without being re-created on every width/height change.
+  const canvasSizeRef = useRef({ width, height })
+  useEffect(() => { canvasSizeRef.current = { width, height } }, [width, height])
+
   // Frame drag refs
   const dragOverFrameRef       = useRef<FabricObject | null>(null)
   const canvasImgDragFrameRef  = useRef<FabricObject | null>(null)
@@ -114,9 +123,23 @@ const DesignCanvas = forwardRef<CanvasHandle, CanvasProps>((
   // Auto-format
   const autoFormatEnabledRef = useRef(true)
 
-  // ── React state ────────────────────────────────────────────────────────────
-  const [zoom, setZoomState] = useState(0.8)
-  const [pan,  setPan]       = useState({ x: 0, y: 0 })
+  // Direct DOM refs for zero-render zoom/pan (Figma-style)
+  const canvasCardRef      = useRef<HTMLDivElement>(null)
+  const dotGridRef         = useRef<HTMLDivElement>(null)
+  const zoomThrottleTimer  = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Bypass React entirely — write CSS directly to DOM nodes.
+  // Stable ref (useCallback + [] deps) so wheel listener never tears down.
+  const applyViewportDOM = useCallback((z: number, p: { x: number; y: number }): void => {
+    if (canvasCardRef.current) {
+      canvasCardRef.current.style.transform = `translate(${p.x}px,${p.y}px) scale(${z})`
+    }
+    if (dotGridRef.current) {
+      dotGridRef.current.style.backgroundSize     = `${32 * z}px ${32 * z}px`
+      dotGridRef.current.style.backgroundPosition = `${p.x}px ${p.y}px`
+      dotGridRef.current.style.opacity            = String(Math.max(0.08, Math.min(0.4, z * 0.3)))
+    }
+  }, [])
 
   // ─────────────────────────────────────────────────────────────────────────
   // HISTORY
@@ -160,16 +183,17 @@ const DesignCanvas = forwardRef<CanvasHandle, CanvasProps>((
   // ─────────────────────────────────────────────────────────────────────────
 
   const calculateZoom = useCallback((): void => {
+    containerRectCache.current = null   // invalidate cached rect on resize
     requestAnimationFrame(() => {
       if (!containerRef.current) return
       const cw = containerRef.current.clientWidth  - 100
       const ch = containerRef.current.clientHeight - 140
       if (cw <= 0 || ch <= 0) return
       const newZoom = Math.max(0.1, Math.min(cw / width, ch / height, 0.6))
-      setZoomState(newZoom)
       zoomRef.current = newZoom
       const zeroPan = { x: 0, y: 0 }
-      setPan(zeroPan); panRef.current = zeroPan
+      panRef.current = zeroPan
+      applyViewportDOM(newZoom, zeroPan)
       onPanChangeRef.current?.(zeroPan)
       onZoomChangeRef.current?.(Math.round(newZoom * 100))
     })
@@ -179,9 +203,9 @@ const DesignCanvas = forwardRef<CanvasHandle, CanvasProps>((
   // SHAPE TOOLS
   // ─────────────────────────────────────────────────────────────────────────
 
-  const addText = useCallback((): void => {
+  const addText = useCallback((text?: string): void => {
     const c = fabricRef.current; if (!c) return
-    const t = new fabric.Textbox('Your text', {
+    const t = new fabric.Textbox(text || 'Your text', {
       left: 80, top: Math.round(height * 0.5), width: width - 160,
       fontSize: 64, fill: TEXT_PRIMARY, fontFamily: 'Inter, sans-serif',
       fontWeight: '700', textAlign: 'left', lineHeight: 1.2, editable: true,
@@ -277,9 +301,9 @@ const DesignCanvas = forwardRef<CanvasHandle, CanvasProps>((
   // TEXT TOOLS
   // ─────────────────────────────────────────────────────────────────────────
 
-  const addTitle = useCallback((): void => {
+  const addTitle = useCallback((text?: string): void => {
     const c = fabricRef.current; if (!c) return
-    const t = new fabric.Textbox('Your Title', {
+    const t = new fabric.Textbox(text || 'Your Title', {
       left: 48, top: Math.round(height * 0.56), width: width - 96,
       fontSize: 72, fill: TEXT_PRIMARY, fontFamily: 'Inter, sans-serif',
       fontWeight: '800', textAlign: 'left', lineHeight: 1.12, charSpacing: 20, editable: true,
@@ -288,9 +312,9 @@ const DesignCanvas = forwardRef<CanvasHandle, CanvasProps>((
     c.add(t); c.setActiveObject(t); c.renderAll(); saveHistory()
   }, [width, height, saveHistory])
 
-  const addSubtitle = useCallback((): void => {
+  const addSubtitle = useCallback((text?: string): void => {
     const c = fabricRef.current; if (!c) return
-    const t = new fabric.Textbox('Subtitle text here', {
+    const t = new fabric.Textbox(text || 'Subtitle text here', {
       left: 48, top: Math.round(height * 0.76), width: width - 96,
       fontSize: 26, fill: TEXT_MUTED, fontFamily: 'Inter, sans-serif',
       fontWeight: '400', textAlign: 'left', lineHeight: 1.4, editable: true,
@@ -299,9 +323,9 @@ const DesignCanvas = forwardRef<CanvasHandle, CanvasProps>((
     c.add(t); c.setActiveObject(t); c.renderAll(); saveHistory()
   }, [width, height, saveHistory])
 
-  const addTag = useCallback((): void => {
+  const addTag = useCallback((text?: string): void => {
     const c = fabricRef.current; if (!c) return
-    const t = new fabric.Textbox('#tag', {
+    const t = new fabric.Textbox(text || '#tag', {
       left: 48, top: height - 80, width: 200,
       fontSize: 16, fill: getAccent(), fontFamily: 'Inter, sans-serif', fontWeight: '600', editable: true,
     })
@@ -354,19 +378,21 @@ const DesignCanvas = forwardRef<CanvasHandle, CanvasProps>((
     reader.onload = (ev): void => {
       const imgEl = new Image()
       imgEl.onload = (): void => {
-        const maxW = width * 0.6; const maxH = height * 0.6
-        const scale = Math.min(maxW / imgEl.width, maxH / imgEl.height, 1)
-        const pattern = new fabric.Pattern({ source: imgEl, repeat: 'no-repeat' })
-        ;(pattern as fabric.Pattern & { patternTransform: number[] }).patternTransform = [scale, 0, 0, scale, -imgEl.width * scale / 2, -imgEl.height * scale / 2]
-        const rect = new fabric.Rect({
-          left: width / 2, top: height / 2, originX: 'center', originY: 'center',
-          width: imgEl.width * scale, height: imgEl.height * scale,
-          fill: pattern, stroke: 'transparent', strokeWidth: 0,
+        // Scale to fit 90% of the canvas, never upscale beyond natural size
+        const maxW = width  * 0.9
+        const maxH = height * 0.9
+        const scale = Math.min(maxW / imgEl.naturalWidth, maxH / imgEl.naturalHeight, 1)
+        const img = new fabric.FabricImage(imgEl, {
+          left:    width  / 2,
+          top:     height / 2,
+          originX: 'center',
+          originY: 'center',
+          scaleX:  scale,
+          scaleY:  scale,
         })
         const name = file.name.replace(/\.[^/.]+$/, '') || 'Image'
-        rect.eliteType = 'image'; rect.eliteLabel = name
-        c.add(rect); rect.setCoords(); (rect as FabricObject & { dirty?: boolean }).dirty = true
-        c.setActiveObject(rect); c.renderAll(); saveHistory()
+        img.eliteType = 'image'; img.eliteLabel = name
+        c.add(img); c.setActiveObject(img); c.renderAll(); saveHistory()
       }
       imgEl.src = ev.target!.result as string
     }
@@ -397,7 +423,8 @@ const DesignCanvas = forwardRef<CanvasHandle, CanvasProps>((
     const active = c.getActiveObject(); if (!active) return
     active.clone(ELITE_CUSTOM_PROPS).then((cloned: FabricObject) => {
       cloned.set({ left: (cloned.left || 0) + 30, top: (cloned.top || 0) + 30 })
-      cloned.eliteLabel = (cloned.eliteLabel || '') + ' copy'
+      const baseLabel = (cloned.eliteLabel || '').replace(/(\s+copy)+$/i, '')
+      cloned.eliteLabel = baseLabel + ' copy'
       c.add(cloned); c.setActiveObject(cloned); c.renderAll(); saveHistory()
     })
   }, [saveHistory])
@@ -559,6 +586,36 @@ const DesignCanvas = forwardRef<CanvasHandle, CanvasProps>((
     loadFileIntoFrame(frame, file, () => { c.renderAll(); saveHistory() })
   }, [saveHistory])
 
+  const loadImageIntoFrameFromURL = useCallback((frame: FabricObject, url: string): void => {
+    const c = fabricRef.current; if (!c) return
+    loadURLIntoFrame(frame, url, () => { c.renderAll(); saveHistory() })
+  }, [saveHistory])
+
+  const addImageFromURL = useCallback((url: string, x?: number, y?: number, w?: number, h?: number): void => {
+    const c = fabricRef.current; if (!c) return
+    const imgEl = new Image()
+    imgEl.crossOrigin = 'anonymous'
+    imgEl.onload = (): void => {
+      const natW = imgEl.naturalWidth  || imgEl.width
+      const natH = imgEl.naturalHeight || imgEl.height
+      // If explicit dimensions provided, scale to fit them; otherwise fit 90% of canvas
+      const maxW = w ?? width  * 0.9
+      const maxH = h ?? height * 0.9
+      const scale = Math.min(maxW / natW, maxH / natH, 1)
+      const img = new fabric.FabricImage(imgEl, {
+        left:    x ?? width  / 2,
+        top:     y ?? height / 2,
+        originX: x !== undefined ? 'left' : 'center',
+        originY: y !== undefined ? 'top'  : 'center',
+        scaleX:  scale,
+        scaleY:  scale,
+      })
+      img.eliteType = 'image'; img.eliteLabel = 'Image'
+      c.add(img); c.setActiveObject(img); c.renderAll(); saveHistory()
+    }
+    imgEl.src = url
+  }, [width, height, saveHistory])
+
   const setFrameFitMode = useCallback((frame: FabricObject, mode: string): void => {
     if (!frame || frame.eliteType !== 'frame') return
     frame.eliteFitMode = mode as 'fill' | 'fit' | 'stretch' | 'none'
@@ -638,10 +695,10 @@ const DesignCanvas = forwardRef<CanvasHandle, CanvasProps>((
     addTriangle, addStar, addPentagon, addHexagon, addDiamond, addArrow,
     addTitle, addSubtitle, addTag,
     addAccentLine, addLogo, addGradientOverlay,
-    addFrameShape, loadImageIntoFrame, setFrameFitMode,
+    addFrameShape, loadImageIntoFrame, loadImageIntoFrameFromURL, setFrameFitMode,
     setFrameImageOffset, setFrameImageScale, clearFrameImage: clearFrameImageFn,
     FRAME_SHAPES,
-    addIconToCanvas,
+    addIconToCanvas, addImageFromURL,
 
     deleteSelected, duplicateSelected, selectAll,
     copy: copyInternal, paste: pasteInternal,
@@ -674,13 +731,14 @@ const DesignCanvas = forwardRef<CanvasHandle, CanvasProps>((
       c.renderAll(); saveHistory()
     },
     getThumb: (): string | null =>
-      fabricRef.current?.toDataURL({ format: 'jpeg', quality: 0.7, multiplier: 0.12 }) ?? null,
+      fabricRef.current?.toDataURL({ format: 'jpeg', quality: 0.75, multiplier: 0.15 }) ?? null,
 
     setZoom: (p: number): void => {
-      const z = Math.max(0.1, Math.min(5, p / 100))
-      zoomRef.current = z; setZoomState(z)
+      const z = Math.max(0.10, Math.min(50, p / 100))
+      zoomRef.current = z
+      applyViewportDOM(z, panRef.current)
     },
-    getZoom: (): number => Math.round(zoom * 100),
+    getZoom: (): number => Math.round(zoomRef.current * 100),
     zoomToFit: (): void => calculateZoom(),
 
     resetToDefault: (): void => {
@@ -739,12 +797,12 @@ const DesignCanvas = forwardRef<CanvasHandle, CanvasProps>((
     getPan: (): { x: number; y: number } => ({ ...panRef.current }),
 
     restoreViewport: (zoomPct: number, pan: { x: number; y: number }): void => {
-      const z = Math.max(0.1, Math.min(5, zoomPct / 100))
+      const z = Math.max(0.10, Math.min(50, zoomPct / 100))
+      const safePan = clampPan(pan, z)
       zoomRef.current = z
-      setZoomState(z)
-      panRef.current = pan
-      setPan(pan)
-      onPanChangeRef.current?.(pan)
+      panRef.current = safePan
+      applyViewportDOM(z, safePan)
+      onPanChangeRef.current?.(safePan)
       onZoomChangeRef.current?.(Math.round(z * 100))
     },
   }))
@@ -1150,11 +1208,17 @@ const DesignCanvas = forwardRef<CanvasHandle, CanvasProps>((
       const tag = (e.target as HTMLElement)?.tagName
       const isEditingText = ['INPUT', 'TEXTAREA', 'SELECT'].includes(tag)
       const isMeta = e.metaKey || e.ctrlKey
+      // True when the user is actively typing inside a Fabric Textbox
+      const isFabricEditing = !!(fabricRef.current?.getActiveObject() as FabricObject & { isEditing?: boolean })?.isEditing
 
+      // ── Always-global: undo / redo (work even inside html inputs) ──────
       if (isMeta && !e.shiftKey && e.key === 'z') { e.preventDefault(); undo(); return }
       if (isMeta &&  e.shiftKey && e.key === 'Z') { e.preventDefault(); redo(); return }
+      if (isMeta && !e.shiftKey && e.key === 'y') { e.preventDefault(); redo(); return }
+
       if (isEditingText) return
 
+      // ── Paste ───────────────────────────────────────────────────────────
       if (isMeta && e.key === 'v') {
         e.preventDefault()
         const activeFrame = (() => { const active = fabricRef.current?.getActiveObject(); return active?.eliteType === 'frame' ? active : null })()
@@ -1178,33 +1242,169 @@ const DesignCanvas = forwardRef<CanvasHandle, CanvasProps>((
           .then((result: { success: boolean }) => { if (!result.success) pasteInternal() })
         return
       }
+
+      // ── Copy ────────────────────────────────────────────────────────────
       if (isMeta && e.key === 'c') {
         e.preventDefault(); copyInternal()
         copyToSystemClipboard(fabricRef.current).catch(() => {}); return
       }
-      if (isMeta && e.key === 'd')              { e.preventDefault(); duplicateSelected(); return }
-      if (isMeta && e.key === 'a')              { e.preventDefault(); selectAll(); return }
-      if (isMeta && !e.shiftKey && e.key === 'g') { e.preventDefault(); groupSelected(); return }
-      if (isMeta &&  e.shiftKey && e.key === 'G') { e.preventDefault(); ungroupSelected(); return }
-      if (e.key === ']')                         { e.preventDefault(); bringToFront(); return }
-      if (e.key === '[')                         { e.preventDefault(); sendToBack(); return }
+
+      // ── Cut ─────────────────────────────────────────────────────────────
+      if (isMeta && e.key === 'x' && !isFabricEditing) {
+        e.preventDefault()
+        copyInternal()
+        copyToSystemClipboard(fabricRef.current).catch(() => {})
+        const cutTarget = fabricRef.current?.getActiveObject()
+        if (cutTarget) deleteSelected()
+        return
+      }
+
+      // ── Duplicate / Select All / Group / Ungroup ────────────────────────
+      if (isMeta && e.key === 'd')                    { e.preventDefault(); duplicateSelected(); return }
+      if (isMeta && e.key === 'a')                    { e.preventDefault(); selectAll(); return }
+      if (isMeta && !e.shiftKey && e.key === 'g')     { e.preventDefault(); groupSelected(); return }
+      if (isMeta &&  e.shiftKey && e.key === 'G')     { e.preventDefault(); ungroupSelected(); return }
+
+      // ── Text alignment (only while Fabric Textbox is in edit mode) ──────
+      if (isFabricEditing && isMeta && e.shiftKey) {
+        const obj = fabricRef.current?.getActiveObject()
+        if (obj) {
+          if (e.key === 'L') { e.preventDefault(); applyStylePatch(obj as unknown as import('fabric').IText, fabricRef.current!, { textAlign: 'left'    }); pushSelectionToStore(obj as FabricObject, canvasRef.current, fabricRef.current!); return }
+          if (e.key === 'C') { e.preventDefault(); applyStylePatch(obj as unknown as import('fabric').IText, fabricRef.current!, { textAlign: 'center'  }); pushSelectionToStore(obj as FabricObject, canvasRef.current, fabricRef.current!); return }
+          if (e.key === 'R') { e.preventDefault(); applyStylePatch(obj as unknown as import('fabric').IText, fabricRef.current!, { textAlign: 'right'   }); pushSelectionToStore(obj as FabricObject, canvasRef.current, fabricRef.current!); return }
+          if (e.key === 'J') { e.preventDefault(); applyStylePatch(obj as unknown as import('fabric').IText, fabricRef.current!, { textAlign: 'justify' }); pushSelectionToStore(obj as FabricObject, canvasRef.current, fabricRef.current!); return }
+        }
+      }
+
+      // ── Layer order ─────────────────────────────────────────────────────
+      // Ctrl/Cmd+Alt+] → Front   |   Ctrl/Cmd+Alt+[ → Back
+      // Ctrl/Cmd+]     → Forward |   Ctrl/Cmd+[     → Backward
+      // bare ]         → Forward |   bare [         → Backward
+      if (!isFabricEditing) {
+        if (isMeta && e.altKey  && e.key === ']') { e.preventDefault(); bringToFront(); return }
+        if (isMeta && e.altKey  && e.key === '[') { e.preventDefault(); sendToBack();   return }
+        if (isMeta && !e.altKey && e.key === ']') { e.preventDefault(); bringForward(); return }
+        if (isMeta && !e.altKey && e.key === '[') { e.preventDefault(); sendBackward(); return }
+        if (!isMeta && e.key === ']')             { e.preventDefault(); bringForward(); return }
+        if (!isMeta && e.key === '[')             { e.preventDefault(); sendBackward(); return }
+      }
+
+      // ── Lock element (Ctrl/Cmd+Shift+L) — only when NOT editing text ──
+      if (isMeta && e.shiftKey && e.key === 'L' && !isFabricEditing) {
+        e.preventDefault(); toggleLock(); return
+      }
+
+      // ── Delete ──────────────────────────────────────────────────────────
       if (e.key === 'Delete' || e.key === 'Backspace') {
         const active = fabricRef.current?.getActiveObject()
         if (active && !(active as FabricObject & { isEditing?: boolean }).isEditing) { e.preventDefault(); deleteSelected() }
         return
       }
+
+      // ── Tab — cycle through canvas objects ──────────────────────────────
+      if (e.key === 'Tab' && !isFabricEditing) {
+        e.preventDefault()
+        const c = fabricRef.current; if (!c) return
+        const objects = c.getObjects().filter(o => o.selectable && o.evented && o.visible)
+        if (objects.length === 0) return
+        const active    = c.getActiveObject()
+        const currentIdx = active ? objects.indexOf(active) : -1
+        const nextIdx    = e.shiftKey
+          ? (currentIdx <= 0 ? objects.length - 1 : currentIdx - 1)
+          : (currentIdx >= objects.length - 1 ? 0 : currentIdx + 1)
+        c.setActiveObject(objects[nextIdx])
+        c.renderAll()
+        return
+      }
+
+      // ── Add elements (bare letter keys — only when nothing is being edited) ──
+      if (!isFabricEditing && !isMeta && !e.altKey && !e.shiftKey) {
+        if (e.key === 't' || e.key === 'T') { e.preventDefault(); addText();   return }
+        if (e.key === 'r' || e.key === 'R') { e.preventDefault(); addRect();   return }
+        if (e.key === 'l' || e.key === 'L') { e.preventDefault(); addLine();   return }
+        if (e.key === 'c' || e.key === 'C') { e.preventDefault(); addCircle(); return }
+      }
+
+      // ── Arrow-key nudge (only when an element is selected) ──────────────
+      if (!isFabricEditing) {
+        const active = fabricRef.current?.getActiveObject()
+        if (active && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
+          e.preventDefault()
+          const step = e.shiftKey ? 10 : 1
+          const c = fabricRef.current!
+          if (e.key === 'ArrowLeft')  active.set('left', (active.left ?? 0) - step)
+          if (e.key === 'ArrowRight') active.set('left', (active.left ?? 0) + step)
+          if (e.key === 'ArrowUp')    active.set('top',  (active.top  ?? 0) - step)
+          if (e.key === 'ArrowDown')  active.set('top',  (active.top  ?? 0) + step)
+          active.setCoords()
+          c.renderAll()
+          saveHistory()
+          return
+        }
+      }
+
+      // ── Zoom shortcuts ──────────────────────────────────────────────────
+      if (isMeta && (e.key === '+' || e.key === '=')) {
+        e.preventDefault()
+        const nz = Math.min(zoomRef.current * 1.25, 5)
+        zoomRef.current = nz; applyViewportDOM(nz, panRef.current)
+        onZoomChangeRef.current?.(Math.round(nz * 100)); return
+      }
+      if (isMeta && e.key === '-') {
+        e.preventDefault()
+        const nz = Math.max(zoomRef.current * 0.8, 0.1)
+        zoomRef.current = nz; applyViewportDOM(nz, panRef.current)
+        onZoomChangeRef.current?.(Math.round(nz * 100)); return
+      }
+      if (isMeta && e.key === '0') { e.preventDefault(); calculateZoom(); return }
+      if (isMeta && e.key === '1') {
+        e.preventDefault()
+        zoomRef.current = 1.0; applyViewportDOM(1.0, panRef.current)
+        onZoomChangeRef.current?.(100); return
+      }
+
+      // ── Tidy up / distribute (Alt+Shift+T) ─────────────────────────────
+      if (e.altKey && e.shiftKey && (e.key === 't' || e.key === 'T') && !isFabricEditing) {
+        e.preventDefault()
+        const c = fabricRef.current; if (!c) return
+        const objs = c.getActiveObjects()
+        if (objs.length >= 2) {
+          const sorted = [...objs].sort((a, b) => a.getBoundingRect().left - b.getBoundingRect().left)
+          const boxes  = sorted.map(o => o.getBoundingRect())
+          const firstLeft  = boxes[0].left
+          const lastRight  = boxes[boxes.length - 1].left + boxes[boxes.length - 1].width
+          const totalWidth = boxes.reduce((sum, b) => sum + b.width, 0)
+          const gap = sorted.length > 1 ? (lastRight - firstLeft - totalWidth) / (sorted.length - 1) : 0
+          let cursor = firstLeft
+          sorted.forEach((obj, i) => {
+            const deltaX = cursor - boxes[i].left
+            obj.set('left', (obj.left ?? 0) + deltaX)
+            obj.setCoords()
+            cursor += boxes[i].width + gap
+          })
+          c.renderAll(); saveHistory()
+        }
+        return
+      }
+
+      // ── Space → pan mode ────────────────────────────────────────────────
       if (e.key === ' ' && !isSpaceDown.current) {
         isSpaceDown.current = true; if (containerRef.current) containerRef.current.style.cursor = 'grab'
       }
+
+      // ── Escape → deselect ───────────────────────────────────────────────
       if (e.key === 'Escape') { fabricRef.current?.discardActiveObject(); fabricRef.current?.renderAll() }
     }
+
     const up = (e: KeyboardEvent): void => {
       if (e.key === ' ') { isSpaceDown.current = false; if (containerRef.current) containerRef.current.style.cursor = 'default' }
     }
     window.addEventListener('keydown', down); window.addEventListener('keyup', up)
     return (): void => { window.removeEventListener('keydown', down); window.removeEventListener('keyup', up) }
   }, [undo, redo, copyInternal, pasteInternal, duplicateSelected, selectAll, groupSelected,
-      ungroupSelected, bringToFront, sendToBack, deleteSelected, saveHistory, width, height])
+      ungroupSelected, bringToFront, sendToBack, bringForward, sendBackward,
+      deleteSelected, toggleLock, addText, addRect, addLine, addCircle,
+      saveHistory, calculateZoom, applyViewportDOM, width, height])
 
   // Resize → recalc zoom
   useEffect(() => {
@@ -1216,8 +1416,48 @@ const DesignCanvas = forwardRef<CanvasHandle, CanvasProps>((
   // PAN EVENT HANDLERS
   // ─────────────────────────────────────────────────────────────────────────
 
+  // Pan clamp — axis-aware:
+  //   canvas fits in container on that axis → hard-lock pan to 0 (nothing to scroll to)
+  //   canvas overflows container on that axis → allow pan up to the overflow + 50px buffer
+  const clampPan = useCallback((p: { x: number; y: number }, z: number): { x: number; y: number } => {
+    const el = containerRef.current
+    if (!el) return p
+    const { width: dw, height: dh } = canvasSizeRef.current
+    const kW = dw * z;  const kH = dh * z
+    const cW = el.clientWidth; const cH = el.clientHeight
+    const maxX = kW > cW ? (kW - cW) / 2 + 50 : 0
+    const maxY = kH > cH ? (kH - cH) / 2 + 50 : 0
+    return {
+      x: Math.max(-maxX, Math.min(maxX, p.x)),
+      y: Math.max(-maxY, Math.min(maxY, p.y)),
+    }
+  }, [])
+
   const handlePointerDown = (e: React.PointerEvent): void => {
     if (!isSpaceDown.current && e.button !== 1) return
+
+    // Pan only activates when the drag starts over the canvas card.
+    // Outside the canvas = dead zone. Zoom-to-cursor handles all navigation.
+    const rect = containerRectCache.current ?? (() => {
+      if (!containerRef.current) return null
+      const r = containerRef.current.getBoundingClientRect()
+      containerRectCache.current = { left: r.left, top: r.top, width: r.width, height: r.height }
+      return containerRectCache.current
+    })()
+    if (rect) {
+      const cCX = rect.left + rect.width  / 2
+      const cCY = rect.top  + rect.height / 2
+      const { width: dw, height: dh } = canvasSizeRef.current
+      const halfW = (dw * zoomRef.current) / 2
+      const halfH = (dh * zoomRef.current) / 2
+      const overCanvas =
+        e.clientX >= cCX + panRef.current.x - halfW &&
+        e.clientX <= cCX + panRef.current.x + halfW &&
+        e.clientY >= cCY + panRef.current.y - halfH &&
+        e.clientY <= cCY + panRef.current.y + halfH
+      if (!overCanvas) return
+    }
+
     e.preventDefault(); isPanning.current = true
     lastMouse.current = { x: e.clientX, y: e.clientY }
     if (containerRef.current) containerRef.current.style.cursor = 'grabbing'
@@ -1227,8 +1467,10 @@ const DesignCanvas = forwardRef<CanvasHandle, CanvasProps>((
     if (!isPanning.current) return
     e.preventDefault()
     const dx = e.clientX - lastMouse.current.x; const dy = e.clientY - lastMouse.current.y
-    const newPan = { x: panRef.current.x + dx, y: panRef.current.y + dy }
-    panRef.current = newPan; setPan(newPan)
+    const raw = { x: panRef.current.x + dx, y: panRef.current.y + dy }
+    const newPan = clampPan(raw, zoomRef.current)
+    panRef.current = newPan
+    applyViewportDOM(zoomRef.current, newPan)
     onPanChangeRef.current?.(newPan)
     lastMouse.current = { x: e.clientX, y: e.clientY }
   }
@@ -1241,36 +1483,77 @@ const DesignCanvas = forwardRef<CanvasHandle, CanvasProps>((
 
   const handleWheel = useCallback((e: WheelEvent): void => {
     e.preventDefault()
+    const container = containerRef.current
+    if (!container) return
+
+    // Cache the container rect — getBoundingClientRect() forces a sync reflow;
+    // measure once, reuse until resize invalidates it.
+    if (!containerRectCache.current) {
+      const r = container.getBoundingClientRect()
+      containerRectCache.current = { left: r.left, top: r.top, width: r.width, height: r.height }
+    }
+    const rect = containerRectCache.current
+
+    // Container center in screen space
+    const cCX = rect.left + rect.width  / 2
+    const cCY = rect.top  + rect.height / 2
+
+    // Canvas card bounds — pure math, zero DOM reads
+    const { width: cw, height: ch } = canvasSizeRef.current
+    const halfW  = (cw * zoomRef.current) / 2
+    const halfH  = (ch * zoomRef.current) / 2
+    const cardCX = cCX + panRef.current.x
+    const cardCY = cCY + panRef.current.y
+    const overCanvas =
+      e.clientX >= cardCX - halfW && e.clientX <= cardCX + halfW &&
+      e.clientY >= cardCY - halfH && e.clientY <= cardCY + halfH
+
     if (e.ctrlKey || e.metaKey) {
-      // Cursor-centered zoom: adjust pan so zoom focuses on cursor position
-      const container = containerRef.current
-      if (!container) return
-      const rect = container.getBoundingClientRect()
-      const cursorX = e.clientX - rect.left - rect.width / 2
-      const cursorY = e.clientY - rect.top - rect.height / 2
+      // Focus point relative to container center:
+      //   inside  → cursor position (zoom anchors to cursor)
+      //   outside → canvas center = panRef.current (zoom scales canvas in place, no jump)
+      const focusX = overCanvas ? e.clientX - cCX : panRef.current.x
+      const focusY = overCanvas ? e.clientY - cCY : panRef.current.y
 
       const oldZoom = zoomRef.current
-      const delta = e.deltaY * -0.005
-      const newZoom = Math.max(0.05, Math.min(oldZoom * (1 + delta), 4))
-      const zoomRatio = newZoom / oldZoom
+      // Exponential zoom — matches Figma/Canva feel exactly.
+      // deltaMode 0 = pixels (trackpad), 1 = lines (mouse wheel), 2 = pages
+      // sensitivity tuned so:
+      //   trackpad fast pinch (deltaY ~50/event)  → ~30% zoom change/event
+      //   mouse wheel 1 notch (deltaY ~100 lines) → ~18% zoom change
+      const sensitivity = e.deltaMode === 0 ? 0.006 : 0.08
+      const factor      = Math.exp(-e.deltaY * sensitivity)
+      const newZoom     = Math.max(0.10, Math.min(oldZoom * factor, 50))
+      const zoomRatio   = newZoom / oldZoom
 
-      // Adjust pan to keep cursor point stationary
-      const newPan = {
-        x: cursorX - zoomRatio * (cursorX - panRef.current.x),
-        y: cursorY - zoomRatio * (cursorY - panRef.current.y),
-      }
+      const newPan = clampPan({
+        x: focusX - zoomRatio * (focusX - panRef.current.x),
+        y: focusY - zoomRatio * (focusY - panRef.current.y),
+      }, newZoom)
 
-      zoomRef.current = newZoom; setZoomState(newZoom)
-      panRef.current = newPan; setPan(newPan)
-      onZoomChangeRef.current?.(Math.round(newZoom * 100))
-      onPanChangeRef.current?.(newPan)
+      zoomRef.current = newZoom
+      panRef.current  = newPan
+
+      // Hot path: pure DOM write, zero React overhead, runs in <0.1ms
+      applyViewportDOM(newZoom, newPan)
+
+      // Throttle toolbar update to ~30fps — parent setState stays off hot path
+      if (zoomThrottleTimer.current) clearTimeout(zoomThrottleTimer.current)
+      zoomThrottleTimer.current = setTimeout(() => {
+        onZoomChangeRef.current?.(Math.round(zoomRef.current * 100))
+        onPanChangeRef.current?.(panRef.current)
+      }, 32)
     } else {
+      // Scroll / pan — only when cursor is over the canvas card
+      if (!overCanvas) return
       const dx = e.shiftKey ? -e.deltaY : -e.deltaX
       const dy = e.shiftKey ? 0          : -e.deltaY
-      const newPan = { x: panRef.current.x + dx, y: panRef.current.y + dy }
-      panRef.current = newPan; setPan(newPan); onPanChangeRef.current?.(newPan)
+      const newPan = clampPan({ x: panRef.current.x + dx, y: panRef.current.y + dy }, zoomRef.current)
+      panRef.current = newPan
+      applyViewportDOM(zoomRef.current, newPan)
+      onPanChangeRef.current?.(newPan)
     }
-  }, [])
+  }, [applyViewportDOM, clampPan])
 
   useEffect(() => {
     const el = containerRef.current; if (!el) return
@@ -1292,18 +1575,20 @@ const DesignCanvas = forwardRef<CanvasHandle, CanvasProps>((
       className="absolute inset-0 overflow-hidden"
       style={{ background: 'var(--bg)', touchAction: 'none' }}
     >
-      {/* Dot grid — scales with zoom, fades at extremes */}
-      <div className="absolute inset-0 pointer-events-none studio-dot-grid"
+      {/* Dot grid — DOM-ref updated directly; no React re-renders on pan/zoom */}
+      <div ref={dotGridRef}
+           className="absolute inset-0 pointer-events-none studio-dot-grid"
            style={{
-             backgroundSize: `${32 * zoom}px ${32 * zoom}px`,
-             backgroundPosition: `${pan.x}px ${pan.y}px`,
-             opacity: Math.max(0.08, Math.min(0.4, zoom * 0.3)),
+             backgroundSize:     `${32 * zoomRef.current}px ${32 * zoomRef.current}px`,
+             backgroundPosition: `${panRef.current.x}px ${panRef.current.y}px`,
+             opacity:            Math.max(0.08, Math.min(0.4, zoomRef.current * 0.3)),
            }}/>
       <div className="absolute inset-0 flex items-center justify-center">
-        <div className="studio-canvas-card" style={{
-          transform: `translate(${pan.x}px,${pan.y}px) scale(${zoom})`,
+        <div ref={canvasCardRef}
+             className="studio-canvas-card" style={{
+          transform:       `translate(${panRef.current.x}px,${panRef.current.y}px) scale(${zoomRef.current})`,
           transformOrigin: 'center center',
-          transition: isPanning.current ? 'none' : 'transform 0.15s ease-out',
+          willChange:      'transform',
         }}>
           <canvas ref={canvasRef}/>
         </div>

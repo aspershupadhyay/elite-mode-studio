@@ -4,6 +4,8 @@ import type {
   AuthStartRequest, AuthStartResult, AuthCompleteEvent, AuthValidateResult,
   StartImageGenRequest, StartImageGenResult, ImageGenProgress,
   SetupCheckResult, SetupSaveRequest,
+  CanvasCommandRequest, CanvasCommandResponse,
+  AppCommandRequest, AppCommandResponse,
 } from './src/types/ipc'
 
 contextBridge.exposeInMainWorld('api', {
@@ -116,6 +118,28 @@ contextBridge.exposeInMainWorld('api', {
     return () => handlers.forEach(({ evt, h }) => ipcRenderer.removeListener(evt, h))
   },
 
+  // ── MCP canvas bridge ────────────────────────────────────────────────────
+  onCanvasCommand: (cb: (cmd: CanvasCommandRequest) => void): (() => void) => {
+    const handler = (_: unknown, cmd: CanvasCommandRequest): void => cb(cmd)
+    ipcRenderer.on('canvas:command', handler)
+    return () => ipcRenderer.removeListener('canvas:command', handler)
+  },
+
+  sendCanvasResult: (result: CanvasCommandResponse): void => {
+    ipcRenderer.send('canvas:result', result)
+  },
+
+  // ── MCP app-level bridge ─────────────────────────────────────────────────
+  onAppCommand: (cb: (cmd: AppCommandRequest) => void): (() => void) => {
+    const handler = (_: unknown, cmd: AppCommandRequest): void => cb(cmd)
+    ipcRenderer.on('app:command', handler)
+    return () => ipcRenderer.removeListener('app:command', handler)
+  },
+
+  sendAppResult: (result: AppCommandResponse): void => {
+    ipcRenderer.send('app:result', result)
+  },
+
 } as {
   version: string
   savePngBatch:         (request: SavePngBatchRequest) => Promise<SavePngBatchResult>
@@ -143,4 +167,8 @@ contextBridge.exposeInMainWorld('api', {
   setImageGenUrl:       (url: string) => Promise<void>
   setupCheck:      () => Promise<SetupCheckResult>
   setupSaveConfig: (req: SetupSaveRequest) => Promise<{ ok: boolean; error?: string }>
+  onCanvasCommand: (cb: (cmd: CanvasCommandRequest) => void) => (() => void)
+  sendCanvasResult: (result: CanvasCommandResponse) => void
+  onAppCommand: (cb: (cmd: AppCommandRequest) => void) => (() => void)
+  sendAppResult: (result: AppCommandResponse) => void
 })

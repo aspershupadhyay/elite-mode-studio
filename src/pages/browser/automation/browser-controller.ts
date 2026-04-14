@@ -68,7 +68,7 @@ export function getChatWindow(): BrowserWindow {
   chatWin = new BrowserWindow({
     width: 1280,
     height: 900,
-    show: true,
+    show: false,
     title: 'Elite Mode — Image Generation',
     webPreferences: {
       nodeIntegration:  false,
@@ -113,8 +113,6 @@ export async function navigateToHome(jobLabel?: string): Promise<void> {
   const win = getChatWindow()
   const targetUrl = getChatGptUrl()
 
-  win.show()
-  win.focus()
   if (jobLabel) win.setTitle(`Elite Mode — Generating: ${jobLabel}`)
 
   // If we're already somewhere within the configured project URL, try to

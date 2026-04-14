@@ -66,6 +66,8 @@ export interface EliteObjectProps {
   eliteHighlightStyle?: string
   /** Canvas globalCompositeOperation blend mode */
   eliteBlendMode?: string
+  /** Stable unique ID — persists across sessions in canvas JSON */
+  eliteId?: string
   /** Gradient overlay: hex color (default '#111111') */
   eliteGradColor?: string
   /** Gradient overlay: direction key — 'tb' | 'bt' | 'lr' | 'rl' | 'tlbr' | 'trbl' | 'bltr' | 'brtl' */
