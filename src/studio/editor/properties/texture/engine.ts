@@ -10,13 +10,24 @@ import type { FabricObject, Canvas as FabricCanvas } from 'fabric'
 import { DEFAULT_TEXTURE } from './types'
 import type { TextureParams, EliteCharTextureRange } from './types'
 
-// ── Internal char-bound shape (Fabric internal) ───────────────────────────────
+// ── Char pixel rect (computed from Fabric internals) ──────────────────────────
+// Fabric v6 GraphemeBBox has no `top` field — it must be computed from
+// cumulative getHeightOfLine() calls.  x must include _getLineLeftOffset()
+// for text-alignment (center / right).
+interface CharPixelRect {
+  x: number   // offscreen pixel x  (= lineAlignOffset + cb.left)
+  y: number   // offscreen pixel y  (= cumulative line heights)
+  w: number   // char width
+  h: number   // char height (fontSize)
+}
+
+// Raw Fabric v6 GraphemeBBox (only fields we use)
 interface FabCharBound {
   left:         number
-  top:          number
   width:        number
   height:       number
   kernedWidth?: number
+  // NOTE: there is NO `top` field in Fabric v6 GraphemeBBox
 }
 
 // ── Extended Fabric object type ───────────────────────────────────────────────
@@ -30,7 +41,11 @@ export type TexFabObj = FabricObject & {
   _eliteTexTile?:     HTMLCanvasElement
   _eliteTexTileKey?:  string
   _eliteTexOff?:      HTMLCanvasElement
+  /** Snapshot of the white-glyph render (pre-texture-clip) used as mask for char-level textures */
+  _eliteWhiteOff?:    HTMLCanvasElement
   _eliteCharTexImgs?: Map<string, HTMLImageElement>
+  /** tile cache keyed by image element → (tileKey → canvas). Avoids buildTile on every frame. */
+  _eliteCharTexTiles?: WeakMap<HTMLImageElement, Map<string, HTMLCanvasElement>>
   _eliteCharTexOff?:  HTMLCanvasElement
   dirty?:             boolean
 }
@@ -67,27 +82,56 @@ function buildTile(img: HTMLImageElement, p: TextureParams): HTMLCanvasElement {
   return tile
 }
 
-// ── Char-bounds iterator ──────────────────────────────────────────────────────
+// ── Char pixel-rect iterator ──────────────────────────────────────────────────
+//
+// Yields offscreen-pixel bounding boxes for chars in [start, end).
+//
+// Why not just read cb.left / cb.top directly?
+//   • Fabric v6 GraphemeBBox has NO `top` field — it must be accumulated
+//     from getHeightOfLine() calls per line.
+//   • cb.left is relative to the start of the line, NOT accounting for
+//     _getLineLeftOffset() (text alignment: center / right shifts every line).
+//
+// Offscreen pixel space: (0,0) = top-left of the text block.
+// The _render override places the offscreen with drawImage(off, -w/2, -h/2),
+// so pixel (0,0) maps to render coord (-w/2, -h/2) — exactly where Fabric
+// begins drawing the text (via _getLeftOffset() + _getTopOffset()).
 
-function* charBoundsInRange(
-  textLines:  string[],
-  charBounds: FabCharBound[][],
-  start:      number,
-  end:        number,
-): Generator<FabCharBound> {
-  let flat = 0
-  for (let li = 0; li < textLines.length; li++) {
-    const line = textLines[li]
-    const lb   = charBounds[li]
-    if (!lb) { flat += line.length + 1; continue }
+function* charPixelRects(
+  obj:   TexFabObj,
+  start: number,
+  end:   number,
+): Generator<CharPixelRect> {
+  const any    = obj as unknown as Record<string, unknown>
+  const gLines = any._textLines as string[][] | undefined  // grapheme arrays
+  const rawCB  = any.__charBounds as FabCharBound[][] | undefined
+  if (!gLines || !rawCB) return
+
+  const fab = obj as unknown as {
+    getHeightOfLine:    (i: number) => number
+    _getLineLeftOffset: (i: number) => number
+  }
+
+  let flat     = 0
+  let lineTopY = 0
+
+  for (let li = 0; li < gLines.length; li++) {
+    const line    = gLines[li]
+    const lb      = rawCB[li]
+    const lineH   = fab.getHeightOfLine(li)
+    const lineOff = fab._getLineLeftOffset?.(li) ?? 0
+
+    if (!lb) { flat += line.length + 1; lineTopY += lineH; continue }
+
     for (let ci = 0; ci < line.length; ci++) {
       if (flat >= start && flat < end) {
         const cb = lb[ci]
-        if (cb) yield cb
+        if (cb) yield { x: lineOff + cb.left, y: lineTopY, w: cb.kernedWidth ?? cb.width, h: cb.height }
       }
       flat++
     }
-    flat++ // newline
+    flat++      // newline
+    lineTopY += lineH
   }
 }
 
@@ -151,6 +195,21 @@ function installRender(
     ;(self as FabricObject).fill = savedFill
     ;(self as FabricObject & { stroke?: string }).stroke = savedStroke
     ;(self as FabricObject & { strokeWidth?: number }).strokeWidth = savedSW
+
+    // Snapshot the white-glyph render for char-level masking (Step 3 will
+    // overwrite `off` with texture pixels via source-in, losing the shapes).
+    // We only need this when char textures are pending.
+    if (isText && self.eliteCharTextures) {
+      if (!self._eliteWhiteOff || self._eliteWhiteOff.width !== w || self._eliteWhiteOff.height !== h) {
+        const c = document.createElement('canvas')
+        c.width = w; c.height = h
+        self._eliteWhiteOff = c
+      }
+      const wCtx = self._eliteWhiteOff.getContext('2d')!
+      wCtx.setTransform(1, 0, 0, 1, 0, 0)
+      wCtx.clearRect(0, 0, w, h)
+      wCtx.drawImage(off, 0, 0)  // copy pixel buffer — not affected by offCtx transform
+    }
 
     // Step 3: clip texture to the mask
     if (tp.mapping === 'tile') {
@@ -229,10 +288,10 @@ function installRender(
     try { charRanges = JSON.parse(charTexJSON) as EliteCharTextureRange[] } catch { return }
     if (!charRanges.length) return
 
-    const selfAny   = self as unknown as Record<string, unknown>
-    const textLines = selfAny.textLines   as string[]        | undefined
-    const rawCB     = selfAny.__charBounds as FabCharBound[][] | undefined
-    if (!textLines || !rawCB) return  // layout not computed yet; will render next frame
+    const selfAny = self as unknown as Record<string, unknown>
+    // Guard: Fabric populates _textLines + __charBounds during layout; if
+    // absent the text box hasn't been measured yet — skip and wait for next frame.
+    if (!selfAny._textLines || !selfAny.__charBounds) return
 
     // shared offscreen for char-level masks
     if (!self._eliteCharTexOff || self._eliteCharTexOff.width !== w || self._eliteCharTexOff.height !== h) {
@@ -251,21 +310,34 @@ function installRender(
       cCtx.setTransform(1, 0, 0, 1, 0, 0)
       cCtx.clearRect(0, 0, w, h)
 
-      // Draw white rects for each char in the range
-      // __charBounds coords start from text top-left.
-      // In the offscreen (pixel space), (0,0) = object top-left = render (-w/2, -h/2).
-      // Fabric's _getLeftOffset() = -w/2, _getTopOffset() = -h/2, so charBound.left/top
-      // map directly to offscreen pixel coords.
-      for (const cb of charBoundsInRange(textLines, rawCB, range.start, range.end)) {
+      // ── Glyph mask (two passes) ──────────────────────────────────────────────
+      // Pass 1: white bounding-box rects restrict the mask to the selected range.
+      // Pass 2: destination-in with the white-glyph snapshot clips to actual
+      //         letter outlines — without this the texture fills solid rectangles.
+      for (const pr of charPixelRects(self, range.start, range.end)) {
         cCtx.fillStyle = '#ffffff'
-        cCtx.fillRect(cb.left, cb.top, cb.kernedWidth ?? cb.width, cb.height)
+        cCtx.fillRect(pr.x, pr.y, pr.w, pr.h)
+      }
+      if (self._eliteWhiteOff) {
+        cCtx.globalCompositeOperation = 'destination-in'
+        cCtx.drawImage(self._eliteWhiteOff, 0, 0)
+        cCtx.globalCompositeOperation = 'source-over'
       }
 
-      // Tile texture into the offscreen, clipped to white rects via source-in
+      // ── Texture fill (source-in clips to glyph mask) ─────────────────────────
       const rp = range.params
+
       if (rp.mapping === 'tile') {
-        const rTile = buildTile(rImg, rp)
-        const pat   = cCtx.createPattern(rTile, 'repeat')
+        // Tile cache: WeakMap<image → Map<tileKey → canvas>> avoids buildTile
+        // on every frame — a new canvas is only built when params change.
+        if (!self._eliteCharTexTiles) self._eliteCharTexTiles = new WeakMap()
+        let perImg = self._eliteCharTexTiles.get(rImg)
+        if (!perImg) { perImg = new Map(); self._eliteCharTexTiles.set(rImg, perImg) }
+        const tk = tileKey(rp)
+        let rTile = perImg.get(tk)
+        if (!rTile) { rTile = buildTile(rImg, rp); perImg.set(tk, rTile) }
+
+        const pat = cCtx.createPattern(rTile, 'repeat')
         if (pat) {
           const panX = (rp.offsetX / 100) * rTile.width
           const panY = (rp.offsetY / 100) * rTile.height
@@ -278,21 +350,31 @@ function installRender(
           cCtx.globalCompositeOperation = 'source-over'
         }
       } else {
+        // fill / fit — apply brightness/contrast/blur/rotation (was missing before)
         const sx   = w / rImg.naturalWidth
         const sy   = h / rImg.naturalHeight
         const base = rp.mapping === 'fill' ? Math.max(sx, sy) : Math.min(sx, sy)
         const s    = base * (rp.scale / 100)
         const dw   = rImg.naturalWidth  * s
         const dh   = rImg.naturalHeight * s
-        const dx   = (w - dw) / 2 + (rp.offsetX / 100 - 0.5) * w
-        const dy   = (h - dh) / 2 + (rp.offsetY / 100 - 0.5) * h
+        // Offsets relative to center of cCtx (after translate below)
+        const dx   = -dw / 2 + (rp.offsetX / 100 - 0.5) * w
+        const dy   = -dh / 2 + (rp.offsetY / 100 - 0.5) * h
+        const filters: string[] = []
+        if (rp.brightness !== 0) filters.push(`brightness(${Math.max(0.01, 1 + rp.brightness / 100)})`)
+        if (rp.contrast   !== 0) filters.push(`contrast(${Math.max(0.01, 1 + rp.contrast   / 100)})`)
+        if (rp.blur       !== 0) filters.push(`blur(${rp.blur}px)`)
         cCtx.save()
+        cCtx.translate(w / 2, h / 2)          // rotate around offscreen centre
+        if (rp.rotation !== 0) cCtx.rotate((rp.rotation * Math.PI) / 180)
+        if (filters.length) cCtx.filter = filters.join(' ')
         cCtx.globalCompositeOperation = 'source-in'
         cCtx.drawImage(rImg, dx, dy, dw, dh)
         cCtx.restore()
         cCtx.globalCompositeOperation = 'source-over'
       }
 
+      // ── Color tint ───────────────────────────────────────────────────────────
       if (rp.tintStrength > 0) {
         cCtx.globalCompositeOperation = 'source-atop'
         cCtx.globalAlpha = rp.tintStrength / 100
@@ -302,31 +384,16 @@ function installRender(
         cCtx.globalAlpha = 1
       }
 
-      // Overlay onto main canvas
-      const pa = ctx.globalAlpha
+      // ── Composite to main canvas — intensity + blend mode ────────────────────
+      const prevGCO   = ctx.globalCompositeOperation
+      const prevAlpha = ctx.globalAlpha
+      if (rp.blendMode && rp.blendMode !== 'normal') {
+        ctx.globalCompositeOperation = rp.blendMode as GlobalCompositeOperation
+      }
       ctx.globalAlpha = (rp.intensity ?? 100) / 100
       ctx.drawImage(cOff, -w / 2, -h / 2)
-      ctx.globalAlpha = pa
-    }
-
-    // Edit-mode indicator — dashed accent underline per textured range
-    if (selfAny.isEditing) {
-      ctx.save()
-      ctx.strokeStyle = 'rgba(11,218,118,0.65)'
-      ctx.lineWidth   = 1.2
-      ctx.setLineDash([2, 3])
-      for (const range of charRanges) {
-        if (!range.params?.src) continue
-        for (const cb of charBoundsInRange(textLines, rawCB, range.start, range.end)) {
-          const x1 = cb.left - w / 2
-          const y1 = cb.top + cb.height - h / 2 + 1.5
-          ctx.beginPath()
-          ctx.moveTo(x1, y1)
-          ctx.lineTo(x1 + (cb.kernedWidth ?? cb.width), y1)
-          ctx.stroke()
-        }
-      }
-      ctx.restore()
+      ctx.globalCompositeOperation = prevGCO
+      ctx.globalAlpha              = prevAlpha
     }
   }
 }
@@ -369,7 +436,9 @@ export function removeTexture(obj: TexFabObj, canvas: FabricCanvas): void {
     delete obj._eliteTexTile
     delete obj._eliteTexTileKey
     delete obj._eliteTexOff
+    delete obj._eliteWhiteOff
     delete obj._eliteCharTexImgs
+    delete obj._eliteCharTexTiles
     delete obj._eliteCharTexOff
     obj.dirty = true
   }
@@ -504,7 +573,9 @@ export function removeCharTexture(
 export function removeAllCharTextures(obj: TexFabObj, canvas: FabricCanvas): void {
   delete obj.eliteCharTextures
   delete obj._eliteCharTexImgs
+  delete obj._eliteCharTexTiles
   delete obj._eliteCharTexOff
+  delete obj._eliteWhiteOff
   if (!obj.eliteTextureFill && obj._eliteOrigRender) {
     ;(obj as unknown as Record<string, unknown>)._render = obj._eliteOrigRender
     delete obj._eliteOrigRender
@@ -542,4 +613,53 @@ export function parseCharTextures(obj: TexFabObj): EliteCharTextureRange[] {
   if (!obj.eliteCharTextures) return []
   try { return JSON.parse(obj.eliteCharTextures) as EliteCharTextureRange[] }
   catch { return [] }
+}
+
+/**
+ * Update the TextureParams for every existing char-texture range on this object.
+ *
+ * Called when the user modifies texture settings (slider drag, preset pick, etc.)
+ * while NOT in text-editing/selection mode — i.e. they want to retune an already-
+ * applied char texture without re-selecting the characters.
+ *
+ * All ranges keep their [start, end] positions; only their params are replaced.
+ * If the new src differs, the image is loaded; the tile cache is always cleared
+ * so stale cached tiles don't linger after brightness / scale changes.
+ */
+export function updateAllCharTextures(
+  obj:    TexFabObj,
+  params: TextureParams,
+  canvas: FabricCanvas,
+): void {
+  if (!obj.eliteCharTextures) return
+  let ranges: EliteCharTextureRange[] = []
+  try { ranges = JSON.parse(obj.eliteCharTextures) as EliteCharTextureRange[] } catch { return }
+  if (!ranges.length) return
+
+  const updated = ranges.map(r => ({ ...r, params: { ...params } }))
+  obj.eliteCharTextures = JSON.stringify(updated)
+
+  // Clear tile cache — params (scale, brightness…) may have changed
+  if (obj._eliteCharTexTiles && obj._eliteCharTexImgs) {
+    for (const img of obj._eliteCharTexImgs.values()) {
+      obj._eliteCharTexTiles.delete(img)
+    }
+  }
+
+  // Load new image if src changed
+  if (!obj._eliteCharTexImgs) obj._eliteCharTexImgs = new Map()
+  const srcs = new Set(updated.map(r => r.params.src).filter(Boolean))
+  let pending = 0
+  for (const src of srcs) {
+    if (obj._eliteCharTexImgs.has(src)) continue
+    pending++
+    const img  = new Image()
+    img.onload = (): void => {
+      obj._eliteCharTexImgs!.set(src, img)
+      if (--pending === 0) ensureCharRenderPatch(obj, canvas)
+    }
+    img.onerror = (): void => { pending-- }
+    img.src = src
+  }
+  if (pending === 0) ensureCharRenderPatch(obj, canvas)
 }

@@ -57,23 +57,29 @@ export const Pill = ({ modified, mixed, children, style: s = {} }: PillProps): J
 export interface TrayProps {
   children: ReactNode
   align?: 'center' | 'left' | 'right'
+  /** 'up' opens the tray above the pill (use when toolbar is near viewport bottom). */
+  direction?: 'down' | 'up'
   style?: CSSProperties
 }
 
-export const Tray = ({ children, align = 'center', style: s = {} }: TrayProps): JSX.Element => {
+export const Tray = ({ children, align = 'center', direction = 'down', style: s = {} }: TrayProps): JSX.Element => {
+  const isUp = direction === 'up'
   const base: CSSProperties = {
-    position: 'absolute', top: 'calc(100% + 8px)',
+    position: 'absolute',
+    ...(isUp ? { bottom: 'calc(100% + 8px)' } : { top: 'calc(100% + 8px)' }),
     background: 'var(--tb-bg)',
     border: '1px solid var(--tb-border)',
     borderRadius: 12, padding: 10, zIndex: 10002,
     boxShadow: 'var(--tb-shadow)',
     backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)',
   }
+  const openAnim = isUp ? 'tray-rise' : 'tray-drop'
+  const openAnimCenter = isUp ? 'tray-rise-center' : 'tray-drop-center'
   const pos: CSSProperties =
-    align === 'right'  ? { right: 0, animation: 'tray-drop .13s cubic-bezier(.16,1,.3,1)' }
-    : align === 'left' ? { left: 0,  animation: 'tray-drop .13s cubic-bezier(.16,1,.3,1)' }
+    align === 'right'  ? { right: 0, animation: `${openAnim} .13s cubic-bezier(.16,1,.3,1)` }
+    : align === 'left' ? { left: 0,  animation: `${openAnim} .13s cubic-bezier(.16,1,.3,1)` }
     : { left: '50%', transform: 'translateX(-50%)',
-        animation: 'tray-drop-center .13s cubic-bezier(.16,1,.3,1)' }
+        animation: `${openAnimCenter} .13s cubic-bezier(.16,1,.3,1)` }
   return <div style={{ ...base, ...pos, ...s }}>{children}</div>
 }
 

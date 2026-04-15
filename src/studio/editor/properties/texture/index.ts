@@ -4,7 +4,8 @@ export { PRESETS, PRESET_CATEGORIES, getPresetSrc, presetToParams } from './pres
 export type { PresetCategory } from './presets'
 export {
   applyTexture, removeTexture, parseTexture, restoreTexturePatch, supportsTextureFill,
-  applyCharTexture, removeCharTexture, removeAllCharTextures, restoreCharTextures, parseCharTextures,
+  applyCharTexture, removeCharTexture, removeAllCharTextures, updateAllCharTextures,
+  restoreCharTextures, parseCharTextures,
 } from './engine'
 export type { TexFabObj } from './engine'
 export { TexturePanel } from './TexturePanel'

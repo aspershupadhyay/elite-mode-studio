@@ -1317,14 +1317,6 @@ const DesignCanvas = forwardRef<CanvasHandle, CanvasProps>((
         return
       }
 
-      // ── Add elements (bare letter keys — only when nothing is being edited) ──
-      if (!isFabricEditing && !isMeta && !e.altKey && !e.shiftKey) {
-        if (e.key === 't' || e.key === 'T') { e.preventDefault(); addText();   return }
-        if (e.key === 'r' || e.key === 'R') { e.preventDefault(); addRect();   return }
-        if (e.key === 'l' || e.key === 'L') { e.preventDefault(); addLine();   return }
-        if (e.key === 'c' || e.key === 'C') { e.preventDefault(); addCircle(); return }
-      }
-
       // ── Arrow-key nudge (only when an element is selected) ──────────────
       if (!isFabricEditing) {
         const active = fabricRef.current?.getActiveObject()

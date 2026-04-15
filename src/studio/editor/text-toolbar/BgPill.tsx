@@ -12,9 +12,10 @@ const BG_SWATCHES = ['#FFD93D', '#0BDA76', '#4488FF', '#FF4444', '#E879F9', '#FF
 
 export interface BgPillProps {
   apply: (styles: Record<string, string | number | boolean | null>) => void
+  trayDir?: 'up' | 'down'
 }
 
-const BgPill = memo(function BgPill({ apply }: BgPillProps): JSX.Element {
+const BgPill = memo(function BgPill({ apply, trayDir = 'down' }: BgPillProps): JSX.Element {
   const { value: textBackgroundColor, mixed, override } = useBgStyle()
   const openKey = useOpenDropdown()
   const setOpen = useSetOpenDropdown()
@@ -45,7 +46,7 @@ const BgPill = memo(function BgPill({ apply }: BgPillProps): JSX.Element {
       {override && <ResetBtn onClick={() => apply({ textBackgroundColor: null })}/>}
 
       {open && (
-        <Tray align="right" style={{ width: 172 }}>
+        <Tray align="right" direction={trayDir} style={{ width: 172 }}>
           <p style={{ margin: '0 0 7px', fontSize: 9, color: 'var(--tb-text3)', fontFamily: 'sans-serif', textTransform: 'uppercase', letterSpacing: '.07em' }}>Highlight</p>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 5, marginBottom: 8 }}>
             {BG_SWATCHES.map(c => (

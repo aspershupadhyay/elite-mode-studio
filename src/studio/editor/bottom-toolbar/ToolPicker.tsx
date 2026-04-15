@@ -269,19 +269,23 @@ export default function ToolPicker({ activeTool, onToolChange, canvasRef }: Tool
     const down = (e: KeyboardEvent): void => {
       const tag = (e.target as HTMLElement)?.tagName
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes(tag)) return
-      if (e.metaKey || e.ctrlKey || e.altKey) return
+      if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return
+      // Skip if Fabric is currently editing a text object
+      const fabricCanvas = canvasRef.current?.getCanvas?.()
+      const activeObj = fabricCanvas?.getActiveObject() as (object & { isEditing?: boolean }) | undefined
+      if (activeObj?.isEditing) return
       const k = e.key.toLowerCase()
-      if (k === 'v')      { e.preventDefault(); onToolChange('select') }
-      else if (k === 'r') { e.preventDefault(); addShape('rect') }
-      else if (k === 'o') { e.preventDefault(); addShape('circle') }
-      else if (k === 'l') { e.preventDefault(); addShape('line') }
-      else if (k === 't') { e.preventDefault(); addText('body') }
-      else if (k === 'i') { e.preventDefault(); fileInputRef.current?.click() }
-      else if (k === 'f') { e.preventDefault(); toggle('frames') }
+      if (k === 'v')           { e.preventDefault(); onToolChange('select') }
+      else if (k === 'r')      { e.preventDefault(); addShape('rect') }
+      else if (k === 'o' || k === 'c') { e.preventDefault(); addShape('circle') }
+      else if (k === 'l')      { e.preventDefault(); addShape('line') }
+      else if (k === 't')      { e.preventDefault(); addText('body') }
+      else if (k === 'i')      { e.preventDefault(); fileInputRef.current?.click() }
+      else if (k === 'f')      { e.preventDefault(); toggle('frames') }
     }
     window.addEventListener('keydown', down)
     return () => window.removeEventListener('keydown', down)
-  }, [addShape, addText, onToolChange])
+  }, [addShape, addText, onToolChange, canvasRef])
 
   // Filtered icons
   const filteredIcons = (ALL_ICONS as Array<{ id: string; label: string; category: string; path: string | string[] }>).filter(icon => {

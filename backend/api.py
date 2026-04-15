@@ -1259,6 +1259,77 @@ async def design_brief(body: DesignBriefRequest):
         raise HTTPException(status_code=500, detail=f"Design brief failed: {e}")
 
 
+# ── Asset ingestion ────────────────────────────────────────────────────────────
+# Accepts images, logos, and fonts from an AI-provided URL or base64 blob,
+# saves them to a stable local directory, and returns a canvas-ready URL.
+
+import uuid as _uuid
+import base64 as _base64
+import mimetypes as _mimetypes
+import urllib.request as _urllib_request
+from fastapi.staticfiles import StaticFiles
+
+_ASSETS_DIR = os.path.join(DATA_DIR, "assets")
+os.makedirs(_ASSETS_DIR, exist_ok=True)
+
+# Serve assets directory so the canvas can load them via HTTP
+try:
+    app.mount("/api/assets/files", StaticFiles(directory=_ASSETS_DIR), name="assets_static")
+except Exception:
+    pass  # already mounted (e.g. hot-reload)
+
+class AssetIngestRequest(BaseModel):
+    url:      Optional[str] = None
+    base64:   Optional[str] = None
+    filename: Optional[str] = None
+    type:     Optional[str] = "image"  # image | logo | font
+
+@app.post("/api/assets/ingest")
+async def ingest_asset(body: AssetIngestRequest):
+    """Download or decode an asset, save it locally, and return a stable canvas URL."""
+    if not body.url and not body.base64:
+        raise HTTPException(status_code=400, detail="Provide either url or base64")
+
+    # Determine file extension
+    filename = body.filename or "asset"
+    ext = os.path.splitext(filename)[1].lower()
+    if not ext:
+        if body.base64 and body.base64.startswith("data:"):
+            mime = body.base64.split(";")[0].split(":")[1]
+            ext = _mimetypes.guess_extension(mime) or ".bin"
+        elif body.url:
+            ext = os.path.splitext(body.url.split("?")[0])[1].lower() or ".png"
+        else:
+            ext = ".png"
+
+    asset_id = _uuid.uuid4().hex
+    save_path = os.path.join(_ASSETS_DIR, f"{asset_id}{ext}")
+
+    try:
+        if body.base64:
+            # Strip data URI prefix if present
+            raw = body.base64
+            if "," in raw:
+                raw = raw.split(",", 1)[1]
+            data = _base64.b64decode(raw)
+            with open(save_path, "wb") as f:
+                f.write(data)
+        else:
+            # Download from URL with a browser-like UA to avoid 403s on CDN assets
+            req = _urllib_request.Request(
+                body.url,  # type: ignore[arg-type]
+                headers={"User-Agent": "Mozilla/5.0 CreatorOS/1.0"},
+            )
+            with _urllib_request.urlopen(req, timeout=30) as resp:
+                with open(save_path, "wb") as f:
+                    f.write(resp.read())
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Asset download failed: {e}")
+
+    canvas_url = f"http://127.0.0.1:8000/api/assets/files/{asset_id}{ext}"
+    return {"asset_id": asset_id, "canvas_url": canvas_url, "type": body.type or "image"}
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("api:app", host="127.0.0.1", port=8000, reload=True,

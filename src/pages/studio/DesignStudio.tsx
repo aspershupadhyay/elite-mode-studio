@@ -548,6 +548,7 @@ export default function DesignStudio({
     switchPage,
     deletePage,
     renamePage,
+    reorderPages,
     getPages:      mcpGetPages,
     getActivePage: mcpGetActivePage,
   })

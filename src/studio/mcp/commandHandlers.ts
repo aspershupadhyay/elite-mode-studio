@@ -271,6 +271,22 @@ export function handleAddFrame(canvasRef: RefObject<CanvasHandle | null>, params
   }
 
   const result = addAndApply(canvasRef, () => canvasRef.current?.addFrame(shape), resolvedParams)
+
+  // Frames use originX/Y='center' — addAndApply sets left=x/top=y which positions the CENTER
+  // at those coords. Convert so that x,y refers to the top-left corner (AI convention).
+  if (resolvedParams.x !== undefined || resolvedParams.y !== undefined) {
+    const canvas = canvasRef.current?.getCanvas()
+    const obj = canvas?.getActiveObject()
+    if (obj && canvas) {
+      const visualW = (obj.width  || 0) * (obj.scaleX || 1)
+      const visualH = (obj.height || 0) * (obj.scaleY || 1)
+      if (resolvedParams.x !== undefined) obj.set('left', Number(resolvedParams.x) + visualW / 2)
+      if (resolvedParams.y !== undefined) obj.set('top',  Number(resolvedParams.y) + visualH / 2)
+      obj.setCoords()
+      canvas.renderAll()
+    }
+  }
+
   return { shape, label: resolvedParams.label, ...result }
 }
 

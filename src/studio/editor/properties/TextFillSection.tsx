@@ -16,7 +16,8 @@ import * as fabric from 'fabric'
 import type { FabricObject, Canvas as FabricCanvas } from 'fabric'
 import '@/types/fabric-custom'
 import { TexturePanel, applyTexture, removeTexture, parseTexture, restoreTexturePatch,
-         applyCharTexture, removeCharTexture, removeAllCharTextures } from './texture'
+         applyCharTexture, removeCharTexture, removeAllCharTextures, updateAllCharTextures,
+         DEFAULT_TEXTURE } from './texture'
 import type { TextureParams } from './texture'
 
 // ── Internal types ─────────────────────────────────────────────────────────────
@@ -30,6 +31,7 @@ type FabObj = FabricObject & {
   eliteTextFillMode?: TextFillMode
   eliteGradientFill?: string
   eliteTextureFill?: string
+  eliteCharTextures?: string   // JSON EliteCharTextureRange[] — mirrors TexFabObj
   eliteSolidFill?: string
   dirty?: boolean
   _eliteOrigRender?: (ctx: CanvasRenderingContext2D) => void
@@ -182,13 +184,21 @@ function applyGradSmart(obj: FabObj, p: GradParams, c: FabricCanvas, inSel: bool
 // ── applyTex shim — delegates to shared engine, also sets eliteTextFillMode ──
 function applyTex(obj: FabObj, p: TextureParams, c: FabricCanvas): void {
   obj.eliteTextFillMode = 'texture'
+  // Normalize fill to a string so the floating toolbar ColorPill always has a
+  // valid hex/rgb value — Gradient and Pattern objects cause the "A" to go blank.
+  const raw = (obj as FabricObject).fill
+  if (typeof raw !== 'string') {
+    ;(obj as FabricObject).set('fill', obj.eliteSolidFill || '#EAEAEA')
+  }
   applyTexture(obj, p, c)
 }
 
 /**
- * Smart texture apply — mirrors applyGradSmart for textures:
- * - Active character selection → applyCharTexture to [start, end)
- * - No selection (whole-object mode) → applyTexture on the whole object
+ * Smart texture apply — three-way dispatch:
+ * 1. Active char selection  → applyCharTexture([start, end))
+ * 2. No selection but obj already has char textures → updateAllCharTextures
+ *    (lets the user retune an existing char texture after deselecting / switching elements)
+ * 3. No char textures at all → applyTexture on the whole object
  */
 function applyTexSmart(
   obj:      FabObj,
@@ -196,14 +206,17 @@ function applyTexSmart(
   c:        FabricCanvas,
   inSel:    boolean,
 ): void {
-  const to  = obj as unknown as FabIText
-  const s   = to.selectionStart ?? 0
-  const e   = to.selectionEnd   ?? 0
+  const to     = obj as unknown as FabIText
+  const s      = to.selectionStart ?? 0
+  const e      = to.selectionEnd   ?? 0
   const hasSel = inSel && s !== e
 
   obj.eliteTextFillMode = 'texture'
   if (hasSel) {
     applyCharTexture(obj, s, e, p, c)
+  } else if (obj.eliteCharTextures && !hasSel) {
+    // Re-tuning existing char textures without re-entering selection mode
+    updateAllCharTextures(obj as Parameters<typeof updateAllCharTextures>[0], p, c)
   } else {
     applyTexture(obj, p, c)
   }
@@ -407,11 +420,24 @@ export function TextFillSection({
   useEffect(() => {
     const o = object as FabObj
     const m = o.eliteTextFillMode || 'solid'
-    const tp = parseTexture(o)
     setMode(m)
     setGradParams(parseGrad(o))
+
+    // Resolve which params to show in the texture panel.
+    // Priority: object-level texture > first char-texture range > defaults.
+    // Without this, re-selecting an object with char textures shows empty defaults
+    // and the user can't adjust the already-applied texture.
+    let tp = parseTexture(o)
+    if (m === 'texture' && !o.eliteTextureFill && o.eliteCharTextures) {
+      try {
+        const ranges = JSON.parse(o.eliteCharTextures) as Array<{ params: TextureParams }>
+        if (ranges[0]?.params?.src) tp = { ...DEFAULT_TEXTURE, ...ranges[0].params }
+      } catch { /* */ }
+    }
     setTexParams(tp)
-    if (m === 'texture' && tp.src && !o._eliteOrigRender) applyTex(o, tp, canvas)
+
+    // Restore render patches so textures show correctly after re-selection
+    if (m === 'texture') restoreTexturePatch(o as Parameters<typeof restoreTexturePatch>[0], canvas)
   }, [object]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Solid fill — reads current string fill or falls back to last stored solid
@@ -493,12 +519,14 @@ export function TextFillSection({
   }
 
   return (
-    // onMouseDown: preventDefault on non-input elements so Fabric's text-editing focus
-    // (hidden textarea) is not stolen when the user interacts with sidebar controls.
+    // onMouseDown: preventDefault on non-interactive elements so Fabric's hidden
+    // textarea doesn't lose focus during sidebar interaction.
+    // Must allow INPUT, TEXTAREA, LABEL, SELECT, BUTTON, OPTION — blocking SELECT
+    // prevents the blend-mode dropdown from opening.
     <div
       onMouseDown={(e: React.MouseEvent<HTMLDivElement>) => {
         const tag = (e.target as HTMLElement).tagName
-        if (tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'LABEL') {
+        if (!['INPUT','TEXTAREA','LABEL','SELECT','BUTTON','OPTION'].includes(tag)) {
           e.preventDefault()
         }
       }}

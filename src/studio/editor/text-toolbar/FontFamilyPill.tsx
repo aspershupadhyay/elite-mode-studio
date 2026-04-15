@@ -14,9 +14,10 @@ const accentHex = (): string =>
 
 export interface FontFamilyPillProps {
   apply: (styles: Record<string, string | number | boolean | null>) => void
+  trayDir?: 'up' | 'down'
 }
 
-const FontFamilyPill = memo(function FontFamilyPill({ apply }: FontFamilyPillProps): JSX.Element {
+const FontFamilyPill = memo(function FontFamilyPill({ apply, trayDir = 'down' }: FontFamilyPillProps): JSX.Element {
   const { value: fontFamilyRaw, mixed, override } = useFontFamilyStyle()
   const fontFamily = typeof fontFamilyRaw === 'string' ? fontFamilyRaw : undefined
   const openKey = useOpenDropdown()
@@ -52,7 +53,7 @@ const FontFamilyPill = memo(function FontFamilyPill({ apply }: FontFamilyPillPro
       {override && <ResetBtn onClick={() => apply({ fontFamily: null })}/>}
 
       {open && (
-        <Tray align="left" style={{ width: 224, maxHeight: 280, display: 'flex', flexDirection: 'column' }}>
+        <Tray align="left" direction={trayDir} style={{ width: 224, maxHeight: 280, display: 'flex', flexDirection: 'column' }}>
           <input autoFocus value={fontQ} onChange={e => setFontQ(e.target.value)}
             placeholder="Search fonts…" onMouseDown={(e: MouseEvent<HTMLInputElement>) => e.stopPropagation()}
             style={{

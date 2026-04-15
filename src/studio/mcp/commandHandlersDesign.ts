@@ -362,9 +362,11 @@ export function handleBuildCarouselPage(
   canvasRef: RefObject<CanvasHandle | null>,
   params: Record<string, unknown>,
 ): unknown {
+  const canvas = getCanvas(canvasRef)
   const created: string[] = []
+  const overlaps: string[] = []
 
-  type SlideEl = { type: string; [k: string]: unknown }
+  type SlideEl = { type: string; zIndex?: string; auto_fit_text?: boolean; [k: string]: unknown }
   const elements: SlideEl[] = Array.isArray(params.elements)
     ? (params.elements as SlideEl[])
     : []
@@ -384,12 +386,79 @@ export function handleBuildCarouselPage(
       created.push(`skipped:${elType}`)
       continue
     }
-    handler(canvasRef, el as Record<string, unknown>)
+
+    // Bug 9: default charSpacing=0 for text elements to prevent wide letter-spacing
+    // at large font sizes (Bebas Neue and similar display fonts look broken without this)
+    const elWithDefaults: Record<string, unknown> = { ...el as Record<string, unknown> }
+    if (['text', 'title', 'subtitle', 'tag'].includes(elType)) {
+      if (elWithDefaults.letterSpacing === undefined && elWithDefaults.charSpacing === undefined) {
+        elWithDefaults.letterSpacing = 0
+      }
+    }
+
+    handler(canvasRef, elWithDefaults)
     created.push(elType)
+
+    // Bug 11/12: apply zIndex after element creation
+    // "back" sends shape behind everything so backgrounds don't cover text
+    if (el.zIndex !== undefined) {
+      const obj = canvas.getActiveObject()
+      if (obj) {
+        const z = String(el.zIndex)
+        if (z === 'back'     || z === 'bottom') canvas.sendObjectToBack(obj)
+        else if (z === 'front' || z === 'top')  canvas.bringObjectToFront(obj)
+        else if (z === 'forward')               canvas.bringObjectForward(obj)
+        else if (z === 'backward')              canvas.sendObjectBackwards(obj)
+        canvas.renderAll()
+      }
+    }
+
+    // Bug 15: auto-fit text to bounding box if requested
+    if (el.auto_fit_text && ['text', 'title', 'subtitle', 'tag'].includes(elType)) {
+      if (elWithDefaults.width && elWithDefaults.height) {
+        handleFitText(canvasRef, {
+          max_width:  Number(elWithDefaults.width),
+          max_height: Number(elWithDefaults.height),
+        })
+      }
+    }
+  }
+
+  // Bug 13: overlap detection — warn when one element fully covers another
+  const allObjs = canvas.getObjects()
+  const TEXT_TYPES = new Set(['text', 'title', 'subtitle', 'tag', 'itext', 'textbox'])
+  for (let a = 0; a < allObjs.length; a++) {
+    for (let b = a + 1; b < allObjs.length; b++) {
+      const ao = allObjs[a] as FabricObject & { eliteType?: string; eliteLabel?: string }
+      const bo = allObjs[b] as FabricObject & { eliteType?: string; eliteLabel?: string }
+      const aType = ao.eliteType ?? ao.type ?? ''
+      const bType = bo.eliteType ?? bo.type ?? ''
+      // Only warn when a non-text element fully covers a text element (actionable case)
+      const aIsText = TEXT_TYPES.has(aType)
+      const bIsText = TEXT_TYPES.has(bType)
+      if (!aIsText && !bIsText) continue
+      const textObj  = aIsText ? ao : bo
+      const coverObj = aIsText ? bo : ao
+      const tL = textObj.left  ?? 0, tT = textObj.top  ?? 0
+      const tR = tL + (textObj.width  ?? 0) * (textObj.scaleX ?? 1)
+      const tB = tT + (textObj.height ?? 0) * (textObj.scaleY ?? 1)
+      const cL = coverObj.left ?? 0, cT = coverObj.top ?? 0
+      const cR = cL + (coverObj.width  ?? 0) * (coverObj.scaleX ?? 1)
+      const cB = cT + (coverObj.height ?? 0) * (coverObj.scaleY ?? 1)
+      if (cL <= tL && cT <= tT && cR >= tR && cB >= tB) {
+        const tLabel = textObj.eliteLabel  ?? textObj.type  ?? 'text'
+        const cLabel = coverObj.eliteLabel ?? coverObj.type ?? 'shape'
+        overlaps.push(`"${cLabel}" covers "${tLabel}" — add zIndex="back" to "${cLabel}" or zIndex="front" to "${tLabel}"`)
+      }
+    }
   }
 
   canvasRef.current?.saveHistory()
-  return { elementsCreated: created.length, types: created }
+  return {
+    elementsCreated: created.length,
+    types: created,
+    ...(overlaps.length ? { overlapWarnings: overlaps } : {}),
+  }
 }
 
 // ── assign_elite_id ────────────────────────────────────────────────────────────

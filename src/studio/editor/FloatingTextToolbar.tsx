@@ -26,6 +26,9 @@ import BgPill         from './text-toolbar/BgPill'
 import { Sep }        from './text-toolbar/shared'
 
 const PILL_H = 44
+// Keep in sync with RIGHT_W in DesignStudio.tsx — the properties panel occupies
+// this many pixels on the right edge, so we must not overlap it.
+const PROPS_PANEL_W = 260
 
 export interface FloatingTextToolbarProps {
   canvasRef: RefObject<CanvasHandle | null>
@@ -58,8 +61,9 @@ export default function FloatingTextToolbar({ canvasRef }: FloatingTextToolbarPr
       const vh       = window.innerHeight || 800
 
       // Horizontal: center on selection, then clamp so no edge clips.
+      // Subtract PROPS_PANEL_W so we never overlap the right properties panel.
       const centerX    = rect.left + rect.width / 2
-      const clampedLeft = Math.max(halfW + 8, Math.min(centerX, vw - halfW - 8))
+      const clampedLeft = Math.max(halfW + 8, Math.min(centerX, vw - PROPS_PANEL_W - halfW - 8))
 
       // Vertical: prefer above selection; flip below if not enough room.
       let top = rect.top - PILL_H - 12
@@ -83,6 +87,10 @@ export default function FloatingTextToolbar({ canvasRef }: FloatingTextToolbarPr
   // Early return — all hooks are above this line
   if (!isEditing || !hasSelection) return null
 
+  // When the toolbar sits in the lower half of the viewport, dropdowns must open
+  // upward so they don't clip off the bottom edge.
+  const trayDir: 'up' | 'down' = pos.top > window.innerHeight * 0.5 ? 'up' : 'down'
+
   return (
     <div
       ref={toolbarRef}
@@ -95,7 +103,7 @@ export default function FloatingTextToolbar({ canvasRef }: FloatingTextToolbarPr
         // Center horizontally on the selection without a hardcoded width
         transform: 'translateX(-50%)',
         width: 'fit-content',
-        maxWidth: 'calc(100vw - 24px)',
+        maxWidth: `calc(100vw - ${PROPS_PANEL_W + 24}px)`,
         height: PILL_H,
         zIndex: 9999,
         display: 'flex', alignItems: 'center', gap: 4,
@@ -109,15 +117,15 @@ export default function FloatingTextToolbar({ canvasRef }: FloatingTextToolbarPr
         animation: 'pill-appear .15s cubic-bezier(.16,1,.3,1)',
       }}
     >
-      <ColorPill      apply={apply}/>
+      <ColorPill      apply={apply} trayDir={trayDir}/>
       <Sep/>
-      <FontFamilyPill apply={apply}/>
+      <FontFamilyPill apply={apply} trayDir={trayDir}/>
       <Sep/>
       <FontSizePill   apply={apply}/>
       <Sep/>
       <BIUPill        apply={apply}/>
       <Sep/>
-      <BgPill         apply={apply}/>
+      <BgPill         apply={apply} trayDir={trayDir}/>
 
       <style>{`
         @keyframes pill-appear {
@@ -130,6 +138,14 @@ export default function FloatingTextToolbar({ canvasRef }: FloatingTextToolbarPr
         }
         @keyframes tray-drop-center {
           from { opacity:0; transform:translateX(-50%) translateY(-6px); }
+          to   { opacity:1; transform:translateX(-50%) translateY(0); }
+        }
+        @keyframes tray-rise {
+          from { opacity:0; transform:translateY(6px); }
+          to   { opacity:1; transform:translateY(0); }
+        }
+        @keyframes tray-rise-center {
+          from { opacity:0; transform:translateX(-50%) translateY(6px); }
           to   { opacity:1; transform:translateX(-50%) translateY(0); }
         }
         @keyframes sz-pop {

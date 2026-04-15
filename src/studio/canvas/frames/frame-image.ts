@@ -267,6 +267,7 @@ export function loadFileIntoFrame(frame: FabricObject, file: File, onDone?: () =
 // ── Load image from a URL (file:// or https://), then apply to frame ──────────
 export function loadURLIntoFrame(frame: FabricObject, url: string, onDone?: () => void): void {
   const imgEl = new window.Image()
+  imgEl.crossOrigin = 'anonymous'  // Required for external HTTPS URLs (FAL, OpenAI CDN) to avoid CORS taint
   imgEl.onload = () => {
     applyImageToFrame(frame, imgEl)
     onDone?.()

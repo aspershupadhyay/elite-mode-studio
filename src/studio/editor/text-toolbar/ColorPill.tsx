@@ -44,11 +44,14 @@ function buildColor(hex: string, opacity: number): string {
 
 export interface ColorPillProps {
   apply: (styles: Record<string, string | number | boolean | null>) => void
+  trayDir?: 'up' | 'down'
 }
 
-const ColorPill = memo(function ColorPill({ apply }: ColorPillProps): JSX.Element {
+const ColorPill = memo(function ColorPill({ apply, trayDir = 'down' }: ColorPillProps): JSX.Element {
   const { value: fillRaw, mixed, override } = useFillStyle()
-  const fill = typeof fillRaw === 'string' ? fillRaw : undefined
+  // Gradient/Pattern objects are non-string; fall back to a visible neutral colour
+  // so the "A" swatch never renders invisible in texture / gradient fill modes.
+  const fill = typeof fillRaw === 'string' ? fillRaw : '#EAEAEA'
   const openKey  = useOpenDropdown()
   const setOpen  = useSetOpenDropdown()
   const open     = openKey === 'color'
@@ -86,7 +89,7 @@ const ColorPill = memo(function ColorPill({ apply }: ColorPillProps): JSX.Elemen
       {override && <ResetBtn onClick={() => apply({ fill: null })}/>}
 
       {open && (
-        <Tray align="left" style={{ width: 180 }}>
+        <Tray align="left" direction={trayDir} style={{ width: 180 }}>
           <p style={{ margin: '0 0 7px', fontSize: 9, color: 'var(--tb-text3)', fontFamily: 'sans-serif', textTransform: 'uppercase', letterSpacing: '.07em' }}>Color</p>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 5, marginBottom: 8 }}>
             {COLOR_SWATCHES.map(c => (

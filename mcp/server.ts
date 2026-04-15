@@ -72,7 +72,11 @@ function bridgePost(
 }
 
 function callCanvas(tool: string, params: Record<string, unknown> = {}): Promise<unknown> {
-  const ms = tool === 'generate_image' || tool === 'place_image_from_url' ? 360_000 : 30_000
+  // Bug 3 fix: extend timeout for large carousel page builds (45+ elements)
+  const ms =
+    (tool === 'generate_image' || tool === 'place_image_from_url') ? 360_000 :
+    tool === 'build_carousel_page' ? 120_000 :
+    30_000
   return bridgePost('127.0.0.1', BRIDGE_PORT, '/canvas-command', { requestId: randomUUID(), tool, params }, ms)
 }
 
@@ -472,6 +476,27 @@ const TOOLS: Tool[] = [
     },
   },
 
+  // ── 11b. upload_asset ─────────────────────────────────────────────────
+  {
+    name: 'upload_asset',
+    description: [
+      'Upload an image, logo, or font from a URL or base64 blob and register it with the canvas.',
+      'Returns a stable asset_id and canvas_url that can be used in create_element, generate_image target_frame, or brand_kit logo_url.',
+      'Use this when the user attaches a photo or logo in chat — pass the temp URL here to get a stable canvas-ready URL.',
+      'type="logo" additionally saves the asset into brand_kit automatically.',
+    ].join(' '),
+    inputSchema: {
+      type: 'object',
+      properties: {
+        url:      { type: 'string',  description: 'HTTP/HTTPS or file:// URL of the asset to ingest' },
+        base64:   { type: 'string',  description: 'Base64-encoded asset content (alternative to url)' },
+        filename: { type: 'string',  description: 'Original filename e.g. "logo.png" (used for extension detection)' },
+        type:     { type: 'string',  enum: ['image','logo','font'], description: 'Asset category. "logo" auto-saves to brand_kit.' },
+      },
+      required: [],
+    },
+  },
+
   // ── 12. build_carousel ────────────────────────────────────────────────
   {
     name: 'build_carousel',
@@ -494,14 +519,34 @@ const TOOLS: Tool[] = [
               background: { type: 'string',  description: 'Background color hex' },
               elements: {
                 type: 'array',
-                description: 'Elements to add — each: { type, text?, x, y, width, height, color?, fill?, label? }',
-                items: { type: 'object' },
+                description: 'Elements to add — each: { type, text?, x, y, width, height, color?, fill?, label?, zIndex?, auto_fit_text? }. zIndex: "back"|"front"|"forward"|"backward" to control layer order (use "back" for backgrounds, "front" for hero text). auto_fit_text: true to auto-scale text to fit its bounding box.',
+                items: {
+                  type: 'object',
+                  properties: {
+                    type:          { type: 'string',  description: 'Element type (text/title/subtitle/tag/shape/frame/icon/accent_line/gradient_overlay/logo)' },
+                    text:          { type: 'string' },
+                    x:             { type: 'number' },
+                    y:             { type: 'number' },
+                    width:         { type: 'number' },
+                    height:        { type: 'number' },
+                    color:         { type: 'string',  description: 'Text/icon color hex' },
+                    fill:          { type: 'string',  description: 'Shape fill color hex' },
+                    label:         { type: 'string',  description: 'Element label for later targeting' },
+                    fontSize:      { type: 'number' },
+                    fontFamily:    { type: 'string' },
+                    fontWeight:    { type: 'string' },
+                    letterSpacing: { type: 'number',  description: '0=normal, positive=wider, negative=tighter. Defaults to 0 to prevent unwanted wide spacing at large font sizes.' },
+                    opacity:       { type: 'number' },
+                    shape:         { type: 'string',  description: 'For type="shape": rect/circle/triangle/star/etc.' },
+                    zIndex:        { type: 'string',  enum: ['back','front','forward','backward'], description: 'Layer order. Use "back" for background shapes/gradients so they sit behind text.' },
+                    auto_fit_text: { type: 'boolean', description: 'Auto-scale font size to fit the element width/height bounding box.' },
+                  },
+                },
               },
             },
           },
         },
-        clear_first:  { type: 'boolean', description: 'Clear current page content before building slide 0. Default false.' },
-        reset_pages:  { type: 'boolean', description: 'RECOMMENDED: Delete all extra pages first so you start from 1 page, preventing duplicates. Default false.' },
+        reset_pages:  { type: 'boolean', description: 'RECOMMENDED: Delete all extra pages, clear and relabel page 0, then build. Prevents duplicates on re-run. Default false.' },
       },
       required: ['slides'],
     },
@@ -578,7 +623,7 @@ const TOOLS: Tool[] = [
         action: {
           type: 'string',
           enum: ['navigate','get_state','settings','save_keys','appearance','check_providers','job_status'],
-          description: 'navigate=switch page; get_state=current page+theme; settings=check API keys; save_keys=write keys to .env; appearance=set theme; check_providers=which image AI providers have keys ready; job_status=poll async image gen (pass job_id)',
+          description: 'navigate=switch page; get_state=current page+theme; settings=check API keys; save_keys=write keys to .env; appearance=set theme; check_providers=which image AI providers have keys ready; job_status=poll async image gen (pass job_id). NOTE: to reset zoom use canvas_settings with zoom="fit" or zoom=100.',
         },
         page: {
           type: 'string',
@@ -617,6 +662,7 @@ async function dispatch(name: string, params: Record<string, unknown>): Promise<
     case 'app_control':           return dispatchApp(params)
     case 'design_from_brief':     return dispatchDesignFromBrief(params)
     case 'build_carousel':        return dispatchBuildCarousel(params)
+    case 'upload_asset':          return dispatchUploadAsset(params)
     case 'brand_kit':             return callCanvas('brand_kit', params)
     case 'template_ops':          return callCanvas('template_ops', params)
     case 'fit_text':              return callCanvas('fit_text', params)
@@ -990,7 +1036,7 @@ async function dispatchBuildCarousel(params: Record<string, unknown>): Promise<u
   const slides: Slide[] = Array.isArray(params.slides) ? (params.slides as Slide[]) : []
   if (!slides.length) throw new Error('slides must be a non-empty array')
 
-  // Reset pages first to prevent duplicates on repeated calls
+  // ── Phase 1: reset pages if requested ─────────────────────────────────────
   if (params.reset_pages) {
     type PageInfo = { index: number }
     const existingPages = (await callCanvas('get_canvas_pages', {})) as PageInfo[]
@@ -1000,36 +1046,90 @@ async function dispatchBuildCarousel(params: Record<string, unknown>): Promise<u
       await new Promise(r => setTimeout(r, 15))
       await callCanvas('delete_canvas_page', { index: d })
     }
-    // Land on page 0
+    // Land on page 0, clear it, and reset its label (Bug 6: label was "Page 2" after reset)
     await callCanvas('switch_canvas_page', { index: 0 })
     await new Promise(r => setTimeout(r, 20))
+    await callCanvas('clear_canvas', {})
+    await callCanvas('rename_canvas_page', { index: 0, name: 'Page 1' })
+    await new Promise(r => setTimeout(r, 10))
   }
+
+  // Track where new pages will land (avoid extra get_canvas_pages calls per slide)
+  type CountPage = { index: number }
+  const startPages = (await callCanvas('get_canvas_pages', {})) as CountPage[]
+  let nextNewIdx = startPages.length  // first new appended page will be at this index
 
   const results: unknown[] = []
 
   for (let i = 0; i < slides.length; i++) {
     const slide = slides[i]
+    let currentPageIdx: number
 
-    if (i === 0) {
-      if (params.clear_first) await callCanvas('clear_canvas', {})
+    if (i === 0 && params.reset_pages) {
+      // Bug 1 fix: with reset_pages, slide 0 uses the cleaned page 0 in place
+      currentPageIdx = 0
     } else {
+      // Bug 1 fix: add_canvas_page now waits for addBlankPage's internal 100ms timer
+      // so the canvas is already switched to the new blank page when it returns.
+      // No separate switch_canvas_page needed.
       await callCanvas('add_canvas_page', {})
-      await new Promise(r => setTimeout(r, 25))
+      await new Promise(r => setTimeout(r, 20))  // small buffer for canvas to settle
+      currentPageIdx = nextNewIdx
+      nextNewIdx++
     }
 
+    // Bug 3: build_carousel_page uses extended 120s timeout (set in callCanvas)
     const result = await callCanvas('build_carousel_page', {
       background: slide.background,
       elements:   slide.elements ?? [],
     })
-    results.push({ slide: i, ...result as object })
+    results.push({ slide: i, pageIndex: currentPageIdx, ...result as object })
   }
 
-  const allPages = (await callCanvas('get_canvas_pages', {})) as Array<unknown>
+  // Bug 2: fetch actual page count from canvas state (not just slides.length)
+  type FinalPage = { index: number; isActive: boolean }
+  const allPages = (await callCanvas('get_canvas_pages', {})) as FinalPage[]
+  const activePage = allPages.find(p => p.isActive)
+
   return {
-    slides:     slides.length,
-    totalPages: allPages.length,
+    slides:          slides.length,
+    totalPages:      allPages.length,                                    // Bug 2: real count
+    activePageIndex: activePage?.index ?? (nextNewIdx - 1),             // Bug 7: current page
     results,
-    tip: 'Pass reset_pages=true on the next call to rebuild cleanly without duplicates.',
+    // Bug 8: only show tip when reset_pages was not used
+    ...(params.reset_pages ? {} : {
+      tip: 'Pass reset_pages=true on the next call to rebuild cleanly without duplicates.',
+    }),
+  }
+}
+
+// ── upload_asset ───────────────────────────────────────────────────────────
+
+async function dispatchUploadAsset(params: Record<string, unknown>): Promise<unknown> {
+  const assetType = String(params.type || 'image')
+  const filename  = String(params.filename || `asset-${Date.now()}.png`)
+  const url       = params.url    ? String(params.url)    : null
+  const base64    = params.base64 ? String(params.base64) : null
+
+  if (!url && !base64) throw new Error('provide either url or base64 to ingest an asset')
+
+  const result = await callBackend('/api/assets/ingest', {
+    url,
+    base64,
+    filename,
+    type: assetType,
+  }, 60_000) as { asset_id: string; canvas_url: string; type: string }
+
+  // For logos, also update brand_kit so brand_kit action="apply" uses the real logo
+  if (assetType === 'logo' && result.canvas_url) {
+    await callCanvas('brand_kit', { action: 'set', logo_url: result.canvas_url })
+  }
+
+  return {
+    asset_id:   result.asset_id,
+    canvas_url: result.canvas_url,
+    type:       result.type,
+    message:    `Asset ingested. Use canvas_url in create_element, generate_image, or brand_kit.`,
   }
 }
 

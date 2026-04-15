@@ -24,6 +24,7 @@ export interface PageOps {
   switchPage:     (idx: number) => Promise<void>
   deletePage:     (idx: number) => void
   renamePage:     (idx: number, name: string) => void
+  reorderPages:   (fromIdx: number, toIdx: number) => void
   getPages:       () => Array<{ index: number; label: string; isActive: boolean }>
   getActivePage:  () => number
 }
@@ -157,7 +158,21 @@ export function useCanvasBridge(
       // Page operations — close over pageOpsRef so they always get the latest fns
       const po = pageOpsRef.current
       const pageCommandMap: Record<string, () => unknown> = {
-        add_canvas_page:       ()  => { po.addBlankPage(); return { success: true, action: 'add', pageCount: po.getPages().length + 1 } },
+        add_canvas_page:       async ()  => {
+          po.addBlankPage()
+          // Wait for addBlankPage's internal setTimeout(100ms) to fire so the canvas
+          // switches to the new page and activePageRef is updated before we respond.
+          await new Promise(r => setTimeout(r, 120))
+          const pages = po.getPages()
+          const newIdx = pages.length - 1
+          // Bug 5: if index param specified and differs from end, reorder to insert at position
+          const requestedIdx = params.index !== undefined ? Number(params.index) : null
+          if (requestedIdx !== null && requestedIdx >= 0 && requestedIdx < newIdx) {
+            po.reorderPages(newIdx, requestedIdx)
+            await new Promise(r => setTimeout(r, 30))
+          }
+          return { success: true, action: 'add', activePageIndex: newIdx, pageCount: pages.length }
+        },
         duplicate_canvas_page: ()  => { po.duplicatePage(Number(params.index ?? po.getActivePage())); return { success: true, action: 'duplicate', pageCount: po.getPages().length } },
         switch_canvas_page:    async () => { await po.switchPage(Number(params.index ?? 0)); return { success: true, action: 'switch', activeIndex: Number(params.index ?? 0) } },
         delete_canvas_page:    ()  => { po.deletePage(Number(params.index ?? po.getActivePage())); return { success: true, action: 'delete', pageCount: po.getPages().length } },
